@@ -1,177 +1,316 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8">
-<title>相机视场角&合适光源计算器</title>
-<style>
-* {box-sizing: border-box;font-family: Microsoft Yahei,sans-serif;margin:0;padding:0;}
-body {max-width:1200px;margin:40px auto;padding:0 24px;background:#f0f2f7;}
-.main-title {font-size:26px;font-weight:700;color:#1d2129;margin-bottom:12px;}
-/* 顶部工具切换按钮 */
-.tool-toggle-wrap {
-    display: flex;
-    gap: 12px;
-    margin-bottom: 20px;
-}
-.tool-toggle-btn {
-    flex: 1;
-    padding: 12px 18px;
-    border: 1px solid #dcdfe6;
-    border-radius: 10px;
-    background: #f7f8fa;
-    color: #4e5969;
-    font-size: 16px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: 0.2s;
-    text-align: center;
-}
-.tool-toggle-btn:hover {
-    border-color: #4080ff;
-    color: #4080ff;
-}
-.tool-toggle-btn.active {
-    background: linear-gradient(135deg,#232730,#000);
-    color: #fff;
-    border-color: #000;
-}
-/* 说明框压缩优化 */
-.desc-box {
-    background: #f6f8fc;
-    border-left: 4px solid #4080ff;
-    padding: 12px 16px;
-    border-radius: 0 12px 12px 0;
-    font-size: 14px;
-    color: #1d2129;
-    line-height: 1.4;
-    margin-bottom: 20px;
-    transition: all 0.2s;
-}
-.desc-box.hide-desc {
-    height: 0;
-    padding: 0;
-    margin-bottom: 0;
-    border: none;
-    overflow: hidden;
-}
-.table-wrap {
-    margin-bottom: 10px;
-}
-.table-wrap:last-child {
-    margin-bottom: 0;
-}
-.table-title {
-    font-weight: 700;
-    font-size: 14px;
-    color: #1d2129;
-    margin-bottom: 6px;
-    padding-left: 2px;
-}
-.grid-row {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 4px 6px;
-}
-.grid-item {
-    background: #ffffff;
-    border: 1px solid #e5e6eb;
-    border-radius: 6px;
-    padding: 5px 2px;
-    text-align: center;
-    color: #4e5969;
-    font-size: 12px;
-}
-.grid-item:nth-child(odd) {
-    color: #1d2129;
-    font-weight: 600;
-    background: #fafafa;
-}
-.card {background:#fff;border-radius:16px;padding:28px 32px;box-shadow:0 4px 16px rgba(0,0,0,.06);margin-bottom:24px;}
-.card-subtitle {font-size:18px;font-weight:600;color:#1d2129;margin-bottom:22px;display:flex;align-items:center;gap:8px;}
-.card-subtitle::before {content:"";width:5px;height:20px;background:#4080ff;border-radius:3px;}
-.form-grid {display:grid;grid-template-columns:1fr 1fr;gap:24px 32px;margin-bottom:28px;}
-.form-item label {display:block;font-size:14px;color:#4e5969;margin-bottom:8px;font-weight:500;}
-.form-item input {width:100%;padding:12px 16px;border:1px solid #dcdfe6;border-radius:10px;font-size:16px;background:#fcfcfd;transition:.2s;}
-.form-item input:focus {outline:none;border-color:#4080ff;box-shadow:0 0 0 3px rgba(64,128,255,.15);background:#fff;}
-.form-item input::placeholder {color:#c9cdd4;font-size:14px;}
-.btn-group {display:flex;gap:16px;}
-#calcBtn {flex:1;background:linear-gradient(135deg,#232730,#000);color:#fff;border:none;padding:14px;border-radius:10px;font-size:16px;cursor:pointer;transition:.25s;}
-#calcBtn:hover {opacity:.92;transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.12);}
-#resetBtn {min-width:110px;background:#f2f3f5;color:#4e5969;border:none;border-radius:10px;padding:14px;font-size:15px;cursor:pointer;transition:.2s;}
-#resetBtn:hover {background:#e5e6eb;}
-.result-top-row {display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:16px;}
-.result-bottom-row {display:grid;grid-template-columns:1fr 1fr;gap:16px;}
-.result-card {background:#f7f8fa;border-radius:16px;padding:28px 16px;text-align:center;}
-.result-bottom-row .result-card {text-align:left;padding:24px 26px;}
-.card-label {font-size:16px;color:#6b7785;margin-bottom:12px;}
-.card-value {font-size:38px;font-weight:700;}
-.result-bottom-row .card-value {font-size:22px;}
-.canvas-block {margin-top:16px;}
-.canvas-block h4 {font-size:16px;color:#333;text-align:center;margin-bottom:12px;font-weight:600;}
-canvas {display:block;margin:0 auto;max-width:100%;border:1px solid #e5e6eb;background:#fff;border-radius:10px;box-shadow:inset 0 1px 4px rgba(0,0,0,.04);}
-.canvas-gap {margin-top:32px;}
-#resultCard,#canvasCard {display:none;}
-/* 线扫专用布局覆盖 */
-.line-scan-wrap .form-grid {
-    grid-template-columns: repeat(3,1fr);
-}
-.line-scan-wrap .result-top-row {
-    grid-template-columns: 1fr;
-}
-.line-scan-wrap .result-bottom-row {
-    grid-template-columns: 1fr 1fr;
-}
-.hide-item {
-    display: none !important;
-}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>相机视场角&合适光源计算器</title>
+    <script src="xlsx.full.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: "Microsoft YaHei", Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 0 24px;
+            background: #f0f2f7;
+        }
+        .main-title {
+            font-size: 26px;
+            font-weight: 700;
+            color: #1d2129;
+            margin-bottom: 12px;
+        }
+        .tool-toggle-wrap {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .tool-toggle-btn {
+            flex: 1;
+            padding: 12px 18px;
+            border: 1px solid #dcdfe6;
+            border-radius: 10px;
+            background: #f7f8fa;
+            color: #4e5969;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: 0.2s;
+            text-align: center;
+        }
+        .tool-toggle-btn:hover {
+            border-color: #4080ff;
+            color: #4080ff;
+        }
+        .tool-toggle-btn.active {
+            background: linear-gradient(135deg, #232730, #000);
+            color: #fff;
+            border-color: #000;
+        }
+        .card {
+            background: #fff;
+            border-radius: 16px;
+            padding: 28px 32px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+            margin-bottom: 24px;
+        }
+        .card-subtitle {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1d2129;
+            margin-bottom: 22px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .card-subtitle::before {
+            content: "";
+            width: 5px;
+            height: 20px;
+            background: #4080ff;
+            border-radius: 3px;
+        }
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px 32px;
+            margin-bottom: 28px;
+        }
+        .form-item label {
+            display: block;
+            font-size: 14px;
+            color: #4e5969;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        .form-item input, .form-item select {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid #dcdfe6;
+            border-radius: 10px;
+            font-size: 16px;
+            background: #fcfcfd;
+            transition: 0.2s;
+        }
+        .form-item input:focus, .form-item select:focus {
+            outline: none;
+            border-color: #4080ff;
+            box-shadow: 0 0 0 3px rgba(64, 128, 255, 0.15);
+            background: #fff;
+        }
+        .form-item input::placeholder {
+            color: #c9cdd4;
+            font-size: 14px;
+        }
+        .data-upload-area {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+            background: #f8f9fa;
+            padding: 12px 16px;
+            border-radius: 8px;
+        }
+        .upload-left {
+            flex: 1;
+            min-width: 200px;
+        }
+        .upload-left label {
+            display: block;
+            font-size: 13px;
+            color: #4e5969;
+            margin-bottom: 4px;
+            font-weight: 500;
+        }
+        .upload-left input {
+            padding: 6px;
+            font-size: 13px;
+            background: white;
+            border: 1px solid #dcdfe6;
+            border-radius: 6px;
+            width: 100%;
+        }
+        .upload-right {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            margin-top: 18px;
+        }
+        .update-btn {
+            padding: 6px 16px;
+            background: #4080ff;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .update-btn:hover {
+            background: #3366cc;
+        }
+        .status-text {
+            font-size: 12px;
+            color: #666;
+            padding: 4px 10px;
+            background: #e8eaed;
+            border-radius: 4px;
+            white-space: nowrap;
+        }
+        .btn-group {
+            display: flex;
+            gap: 16px;
+        }
+        #calcBtn {
+            flex: 1;
+            background: linear-gradient(135deg, #232730, #000);
+            color: #fff;
+            border: none;
+            padding: 14px;
+            border-radius: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: 0.25s;
+        }
+        #calcBtn:hover {
+            opacity: 0.92;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+        }
+        #resetBtn {
+            min-width: 110px;
+            background: #f2f3f5;
+            color: #4e5969;
+            border: none;
+            border-radius: 10px;
+            padding: 14px;
+            font-size: 15px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        #resetBtn:hover {
+            background: #e5e6eb;
+        }
+        .result-top-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+        .result-bottom-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+        .result-card {
+            background: #f7f8fa;
+            border-radius: 16px;
+            padding: 28px 16px;
+            text-align: center;
+        }
+        .result-bottom-row .result-card {
+            text-align: left;
+            padding: 24px 26px;
+        }
+        .card-label {
+            font-size: 16px;
+            color: #6b7785;
+            margin-bottom: 12px;
+        }
+        .card-value {
+            font-size: 38px;
+            font-weight: 700;
+        }
+        .result-bottom-row .card-value {
+            font-size: 22px;
+        }
+        .canvas-block {
+            margin-top: 16px;
+        }
+        .canvas-block h4 {
+            font-size: 16px;
+            color: #333;
+            text-align: center;
+            margin-bottom: 12px;
+            font-weight: 600;
+        }
+        canvas {
+            display: block;
+            margin: 0 auto;
+            max-width: 100%;
+            border: 1px solid #e5e6eb;
+            background: #fff;
+            border-radius: 10px;
+            box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.04);
+        }
+        .canvas-gap {
+            margin-top: 32px;
+        }
+        #resultCard, #canvasCard {
+            display: none;
+        }
+        .line-scan-wrap .form-grid {
+            grid-template-columns: repeat(3, 1fr);
+        }
+        .line-scan-wrap .result-top-row {
+            grid-template-columns: 1fr;
+        }
+        .line-scan-wrap .result-bottom-row {
+            grid-template-columns: 1fr 1fr;
+        }
+        .hide-item {
+            display: none !important;
+        }
+        #loadingTip {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            color: #4080ff;
+            font-size: 14px;
+        }
+        #loadingTip.show {
+            display: block;
+        }
+    </style>
 </head>
 <body>
+<div id="loadingTip" class="show">⏳ 正在加载Excel解析库，请稍候...</div>
 <h1 class="main-title">相机视场角&合适光源计算器</h1>
-
-<!-- 最顶部切换按钮 -->
 <div class="tool-toggle-wrap">
     <button class="tool-toggle-btn active" data-tool="area">面阵相机计算器</button>
     <button class="tool-toggle-btn" data-tool="line">线扫相机计算器</button>
 </div>
-
-<!-- 压缩精简表格，全局末尾新增6500W 29.9×22.4 -->
-<div class="desc-box" id="descBox">
-<div class="table-wrap">
-    <div class="table-title">卷帘相机芯片尺寸</div>
-    <div class="grid-row">
-        <div class="grid-item">500W</div><div class="grid-item">5.7×4.27</div>
-        <div class="grid-item">600W</div><div class="grid-item">7.37×4.91</div>
-        <div class="grid-item">1200W</div><div class="grid-item">7.44×5.61</div>
-        <div class="grid-item">2000W</div><div class="grid-item">13.13×8.75</div>
-    </div>
-</div>
-<div class="table-wrap">
-    <div class="table-title">全局相机芯片尺寸</div>
-    <div class="grid-row">
-        <div class="grid-item">130W</div><div class="grid-item">6.14×4.91</div>
-        <div class="grid-item">160W</div><div class="grid-item">4.96×3.72</div>
-        <div class="grid-item">200W</div><div class="grid-item">7.2×5.4</div>
-        <div class="grid-item">230W</div><div class="grid-item">11.25×7.03</div>
-        <div class="grid-item">500W</div><div class="grid-item">8.44×7.06</div>
-        <div class="grid-item">1230W</div><div class="grid-item">14.13×10.35</div>
-        <div class="grid-item">2500W</div><div class="grid-item">12.8×12.8</div>
-        <div class="grid-item">6500W</div><div class="grid-item">29.9×22.4</div>
-    </div>
-</div>
-</div>
-
 <div class="card" id="inputWrap">
     <h2 class="card-subtitle">参数输入</h2>
     <div class="form-grid">
-        <!-- 面阵输入项 -->
+        <div class="form-item area-item" style="grid-column: 1 / -1;">
+            <div class="data-upload-area">
+                <div class="upload-left">
+                    <label>📊 Excel数据源（面阵）</label>
+                    <input type="file" id="fileUpload" accept=".xlsx,.xls">
+                </div>
+                <div class="upload-right">
+                    <button class="update-btn" id="updateDataBtn">更新数据</button>
+                    <span class="status-text" id="dataStatus">未加载</span>
+                </div>
+            </div>
+        </div>
+        <div class="form-item area-item">
+            <label>选择相机型号</label>
+            <select id="modelSelect">
+                <option value="">-- 请先加载数据 --</option>
+            </select>
+        </div>
         <div class="form-item area-item">
             <label>传感器长边（mm）</label>
-            <input id="senW" placeholder="请输入传感器长边芯片尺寸">
+            <input id="senW" placeholder="请输入传感器长边">
         </div>
         <div class="form-item area-item">
             <label>传感器短边（mm）</label>
-            <input id="senH" placeholder="请输入传感器短边芯片尺寸">
+            <input id="senH" placeholder="请输入传感器短边">
         </div>
         <div class="form-item area-item">
             <label>镜头焦距（mm）</label>
@@ -186,18 +325,17 @@ canvas {display:block;margin:0 auto;max-width:100%;border:1px solid #e5e6eb;back
             <input id="distLight" placeholder="光源到工件距离">
         </div>
         <div class="form-item area-item"></div>
-        <!-- 线扫输入项 -->
         <div class="form-item line-item hide-item">
-            <label>视野宽度(mm)</label>
-            <input id="realW" type="number" step="any" placeholder="请输入视野宽度(mm)">
+            <label>视野宽度（mm）</label>
+            <input id="realW" type="number" step="any" placeholder="请输入视野宽度">
         </div>
         <div class="form-item line-item hide-item">
-            <label>相机工作距离(mm)</label>
-            <input id="distCamLine" type="number" step="any" placeholder="请输入相机工作距离(mm)">
+            <label>相机工作距离（mm）</label>
+            <input id="distCamLine" type="number" step="any" placeholder="请输入相机工作距离">
         </div>
         <div class="form-item line-item hide-item">
-            <label>光源工作距离(mm)</label>
-            <input id="distLightLine" type="number" step="any" placeholder="请输入光源工作距离(mm)">
+            <label>光源工作距离（mm）</label>
+            <input id="distLightLine" type="number" step="any" placeholder="请输入光源工作距离">
         </div>
     </div>
     <div class="btn-group">
@@ -205,7 +343,6 @@ canvas {display:block;margin:0 auto;max-width:100%;border:1px solid #e5e6eb;back
         <button id="resetBtn">重置清空</button>
     </div>
 </div>
-
 <div class="card" id="resultCard">
     <h2 class="card-subtitle">计算结果</h2>
     <div class="result-wrap">
@@ -236,13 +373,12 @@ canvas {display:block;margin:0 auto;max-width:100%;border:1px solid #e5e6eb;back
                 <div class="card-label">光源尺寸</div>
                 <div class="card-value" style="color:#c82423">
                     <span class="area-item">光源长边：<span id="lightLenW">--</span><br>光源短边：<span id="lightLenH">--</span></span>
-                    <span class="line-item hide-item">光源长度: <span id="lightSizeLine">--</span></span>
+                    <span class="line-item hide-item">光源长度：<span id="lightSizeLine">--</span></span>
                 </div>
             </div>
         </div>
     </div>
 </div>
-
 <div class="card" id="canvasCard">
     <h2 class="card-subtitle">视场图纸预览</h2>
     <div class="canvas-block area-item">
@@ -257,339 +393,491 @@ canvas {display:block;margin:0 auto;max-width:100%;border:1px solid #e5e6eb;back
         <canvas id="canLine"></canvas>
     </div>
 </div>
-
 <script>
-const calcBtn = document.getElementById('calcBtn');
-const resetBtn = document.getElementById('resetBtn');
-const [canH,canV,canLine] = [document.getElementById('canH'),document.getElementById('canV'),document.getElementById('canLine')];
-const [ctxH,ctxV,ctxLine] = [canH.getContext('2d'),canV.getContext('2d'),canLine.getContext('2d')];
-const rad2deg = r=>r*180/Math.PI;
-const deg2rad = d=>d*Math.PI/180;
-const MAX_W = 1600, MAX_H = 1200;
-const dpr = ()=>window.devicePixelRatio||1;
+// 全局镜头图片对象，替换蓝色方块CST
+const lensImage = new Image();
+lensImage.src = "lens.png";
+lensImage.onload = () => console.log("镜头图片加载完成");
+lensImage.onerror = () => console.warn("未找到lens.png，将使用默认方块");
 
-// 切换工具显示隐藏
-function switchTool(toolVal){
-    const val = toolVal;
-    const areaItems = document.querySelectorAll('.area-item');
-    const lineItems = document.querySelectorAll('.line-item');
-    const descBox = document.getElementById('descBox');
-    const inputWrap = document.getElementById('inputWrap');
-    // 重置画布与结果
-    resetAll();
-    if(val === 'area'){
-        // 面阵：显示对照表板块
-        descBox.classList.remove('hide-desc');
-        descBox.innerHTML = `
-<div class="table-wrap">
-    <div class="table-title">卷帘相机芯片尺寸</div>
-    <div class="grid-row">
-        <div class="grid-item">500W</div><div class="grid-item">5.7×4.27</div>
-        <div class="grid-item">600W</div><div class="grid-item">7.37×4.91</div>
-        <div class="grid-item">1200W</div><div class="grid-item">7.44×5.61</div>
-        <div class="grid-item">2000W</div><div class="grid-item">13.13×8.75</div>
-    </div>
-</div>
-<div class="table-wrap">
-    <div class="table-title">全局相机芯片尺寸</div>
-    <div class="grid-row">
-        <div class="grid-item">130W</div><div class="grid-item">6.14×4.91</div>
-        <div class="grid-item">160W</div><div class="grid-item">4.96×3.72</div>
-        <div class="grid-item">200W</div><div class="grid-item">7.2×5.4</div>
-        <div class="grid-item">230W</div><div class="grid-item">11.25×7.03</div>
-        <div class="grid-item">500W</div><div class="grid-item">8.44×7.06</div>
-        <div class="grid-item">1230W</div><div class="grid-item">14.13×10.35</div>
-        <div class="grid-item">2500W</div><div class="grid-item">12.8×12.8</div>
-        <div class="grid-item">6500W</div><div class="grid-item">29.9×22.4</div>
-    </div>
-</div>`;
-        inputWrap.classList.remove('line-scan-wrap');
-        areaItems.forEach(el=>el.classList.remove('hide-item'));
-        lineItems.forEach(el=>el.classList.add('hide-item'));
-    }else{
-        // 线扫：直接隐藏整个说明板块，清空内容+折叠高度
-        descBox.innerHTML = '';
-        descBox.classList.add('hide-desc');
-        inputWrap.classList.add('line-scan-wrap');
-        areaItems.forEach(el=>el.classList.add('hide-item'));
-        lineItems.forEach(el=>el.classList.remove('hide-item'));
+class ExcelDataManager {
+    constructor() {
+        this.data = [];
+        this.fileName = '';
+        this.loadTime = '';
+        this.isLoaded = false;
+        this.columnMap = {};
+    }
+    loadExcel(file) {
+        var self = this;
+        return new Promise(function(resolve, reject) {
+            var reader = new FileReader();
+            reader.onload = function(ev) {
+                try {
+                    var data = new Uint8Array(ev.target.result);
+                    var workbook = XLSX.read(data, { type: 'array' });
+                    var firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    var jsonData = XLSX.utils.sheet_to_json(firstSheet);
+                    if (!jsonData || jsonData.length === 0) {
+                        reject(new Error('Excel文件为空或格式不正确'));
+                        return;
+                    }
+                    self.data = jsonData;
+                    self.fileName = file.name;
+                    self.loadTime = new Date().toLocaleString();
+                    self.isLoaded = true;
+                    self.columnMap = self.autoDetectColumns();
+                    resolve(jsonData);
+                } catch (error) {
+                    reject(error);
+                }
+            };
+            reader.onerror = function() {
+                reject(new Error('读取文件失败'));
+            };
+            reader.readAsArrayBuffer(file);
+        });
+    }
+    autoDetectColumns() {
+        if (this.data.length === 0) return {};
+        var firstRow = this.data[0];
+        var keys = Object.keys(firstRow);
+        var findKey = function(patterns) {
+            for (var i = 0; i < patterns.length; i++) {
+                var p = patterns[i];
+                for (var j = 0; j < keys.length; j++) {
+                    var k = keys[j];
+                    if (k.indexOf(p) !== -1 || k.toLowerCase().indexOf(p.toLowerCase()) !== -1) {
+                        return k;
+                    }
+                }
+            }
+            return '';
+        };
+        return {
+            name: findKey(['型号', '名称', 'model', 'name', '相机']),
+            senW: findKey(['长边', '宽', 'width', 'sensor_w', 'senW']),
+            senH: findKey(['短边', '高', 'height', 'sensor_h', 'senH']),
+            focal: findKey(['焦距', 'focal', 'f']),
+            distCam: findKey(['相机工作距离', 'cam_dist', '工作距离', '距离']),
+            distLight: findKey(['光源工作距离', 'light_dist', '光源距离'])
+        };
+    }
+    getVersionInfo() {
+        if (!this.isLoaded) return '未加载';
+        return this.fileName + ' | ' + this.loadTime + ' | ' + this.data.length + '条';
+    }
+    populateSelect(selectElement) {
+        selectElement.innerHTML = '<option value="">-- 请选择型号 --</option>';
+        if (!this.isLoaded) return;
+        var nameKey = this.columnMap.name || Object.keys(this.data[0])[0];
+        for (var i = 0; i < this.data.length; i++) {
+            var row = this.data[i];
+            var opt = document.createElement('option');
+            opt.value = JSON.stringify(row);
+            var displayName = row[nameKey] || ('型号' + (i + 1));
+            opt.textContent = displayName;
+            selectElement.appendChild(opt);
+        }
+    }
+    fillInputs(row) {
+        var map = this.columnMap;
+        var inputMap = {
+            'senW': map.senW,
+            'senH': map.senH,
+            'focal': map.focal,
+            'distCam': map.distCam || '相机工作距离',
+            'distLight': map.distLight || '光源工作距离'
+        };
+        for (var id in inputMap) {
+            var colKey = inputMap[id];
+            var element = document.getElementById(id);
+            if (element && colKey && row[colKey] !== undefined && row[colKey] !== null) {
+                element.value = row[colKey];
+            }
+        }
     }
 }
-
-// 页面初始化绑定按钮
-window.onload = ()=>{
-    ctxH.clearRect(0,0,canH.width,canH.height);
-    ctxV.clearRect(0,0,canV.width,canV.height);
-    ctxLine.clearRect(0,0,canLine.width,canLine.height);
-    document.querySelectorAll('.tool-toggle-btn').forEach(btn=>{
-        btn.addEventListener('click',function(){
-            document.querySelectorAll('.tool-toggle-btn').forEach(b=>b.classList.remove('active'));
+var areaDataManager = new ExcelDataManager();
+var calcBtn = document.getElementById('calcBtn');
+var resetBtn = document.getElementById('resetBtn');
+var canH = document.getElementById('canH');
+var canV = document.getElementById('canV');
+var canLine = document.getElementById('canLine');
+var ctxH = canH.getContext('2d');
+var ctxV = canV.getContext('2d');
+var ctxLine = canLine.getContext('2d');
+var rad2deg = function(r) { return r * 180 / Math.PI; };
+var deg2rad = function(d) { return d * Math.PI / 180; };
+var MAX_W = 1600;
+var MAX_H = 1200;
+function updateAreaData() {
+    var fileInput = document.getElementById('fileUpload');
+    var file = fileInput.files[0];
+    if (!file) {
+        alert('请先选择Excel文件');
+        return;
+    }
+    var statusSpan = document.getElementById('dataStatus');
+    statusSpan.textContent = '加载中...';
+    statusSpan.style.color = '#ff9800';
+    areaDataManager.loadExcel(file)
+        .then(function() {
+            statusSpan.textContent = areaDataManager.getVersionInfo();
+            statusSpan.style.color = '#4caf50';
+            areaDataManager.populateSelect(document.getElementById('modelSelect'));
+            alert('数据更新成功！\n文件: ' + areaDataManager.fileName + '\n记录数: ' + areaDataManager.data.length);
+        })
+        .catch(function(error) {
+            statusSpan.textContent = '加载失败';
+            statusSpan.style.color = '#f44336';
+            alert('数据加载失败: ' + error.message);
+        });
+}
+document.getElementById('updateDataBtn').addEventListener('click', updateAreaData);
+document.getElementById('modelSelect').addEventListener('change', function() {
+    if (!this.value || !areaDataManager.isLoaded) {
+        ['senW', 'senH', 'focal', 'distCam', 'distLight'].forEach(function(id) {
+            document.getElementById(id).value = '';
+        });
+        return;
+    }
+    try {
+        var row = JSON.parse(this.value);
+        areaDataManager.fillInputs(row);
+    } catch (error) {
+        console.error('填充数据失败:', error);
+    }
+});
+function switchTool(toolVal) {
+    var areaItems = document.querySelectorAll('.area-item');
+    var lineItems = document.querySelectorAll('.line-item');
+    var inputWrap = document.getElementById('inputWrap');
+    resetAll();
+    if (toolVal === 'area') {
+        inputWrap.classList.remove('line-scan-wrap');
+        areaItems.forEach(function(el) { el.classList.remove('hide-item'); });
+        lineItems.forEach(function(el) { el.classList.add('hide-item'); });
+    } else {
+        inputWrap.classList.add('line-scan-wrap');
+        areaItems.forEach(function(el) { el.classList.add('hide-item'); });
+        lineItems.forEach(function(el) { el.classList.remove('hide-item'); });
+    }
+}
+window.onload = function() {
+    document.getElementById('loadingTip').classList.remove('show');
+    ctxH.clearRect(0, 0, canH.width, canH.height);
+    ctxV.clearRect(0, 0, canV.width, canV.height);
+    ctxLine.clearRect(0, 0, canLine.width, canLine.height);
+    var btns = document.querySelectorAll('.tool-toggle-btn');
+    for (var i = 0; i < btns.length; i++) {
+        btns[i].addEventListener('click', function() {
+            var allBtns = document.querySelectorAll('.tool-toggle-btn');
+            for (var j = 0; j < allBtns.length; j++) {
+                allBtns[j].classList.remove('active');
+            }
             this.classList.add('active');
             switchTool(this.dataset.tool);
-        })
-    })
+        });
+    }
 };
-
-// 面阵圆弧绘制
-function drawArc(ctx,cx,cy,r,start,end,seg=30){
+setTimeout(function() {
+    var tip = document.getElementById('loadingTip');
+    if (tip.classList.contains('show')) {
+        tip.innerHTML = '⚠️ 加载较慢，如无法使用Excel功能，请刷新页面重试';
+        tip.style.color = '#ff9800';
+    }
+}, 5000);
+function drawArc(ctx, cx, cy, r, start, end, seg) {
+    seg = seg || 30;
     ctx.beginPath();
-    let first = true, ang = start;
-    const step = (end-start)/seg;
-    for(let i=0;i<=seg;i++,ang+=step){
-        const x = cx+Math.cos(ang)*r;
-        const y = cy+Math.sin(ang)*r;
-        first ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
-        first = false;
+    var first = true;
+    var ang = start;
+    var step = (end - start) / seg;
+    for (var i = 0; i <= seg; i++) {
+        var x = cx + Math.cos(ang) * r;
+        var y = cy + Math.sin(ang) * r;
+        if (first) { ctx.moveTo(x, y); first = false; }
+        else { ctx.lineTo(x, y); }
+        ang += step;
     }
     ctx.stroke();
 }
+function drawCone(ctx, canvas, FOV, workLen, lightLen) {
+    var baseApexY = 120, baseWorkY = 260;
+    var pixDis = baseWorkY - baseApexY;
+    var halfRad = deg2rad(FOV / 2);
+    var halfWork = pixDis * Math.tan(halfRad);
+    var scale = lightLen / workLen;
+    var halfLight = halfWork * scale;
+    var lightY = baseWorkY - (pixDis * (scale - 1));
+    var downOffset = pixDis * (scale - 1);
+    var downPlaneY = baseWorkY + downOffset;
+    var halfDown = halfWork * scale;
 
-// 面阵视场锥绘图
-function drawCone(ctx,canvas,FOV,workLen,lightLen){
-    const baseApexY = 120, baseWorkY = 260;
-    const pixDis = baseWorkY - baseApexY;
-    const halfRad = deg2rad(FOV/2);
-    const halfWork = pixDis*Math.tan(halfRad);
-    const scale = lightLen/workLen;
-    const halfLight = halfWork*scale;
-    const lightY = baseWorkY - (pixDis*(scale-1));
-    const pts = [
-        {x:0,y:baseApexY},{x:-halfWork,y:baseWorkY},{x:halfWork,y:baseWorkY},
-        {x:-halfLight,y:lightY},{x:halfLight,y:lightY}
+    var pts = [
+        {x: 0, y: baseApexY}, {x: -halfWork, y: baseWorkY}, {x: halfWork, y: baseWorkY},
+        {x: -halfLight, y: lightY}, {x: halfLight, y: lightY},
+        {x: -halfDown, y: downPlaneY}, {x: halfDown, y: downPlaneY}
     ];
-    let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
-    pts.forEach(p=>{
-        minX=Math.min(minX,p.x);maxX=Math.max(maxX,p.x);
-        minY=Math.min(minY,p.y);maxY=Math.max(maxY,p.y);
-    });
-    const safe = 90, pad = 35;
-    minX-=safe;maxX+=safe;minY-=safe;maxY+=safe;
-    let cw = (maxX-minX)+pad*2;
-    let ch = (maxY-minY)+pad*2;
-    let ratio = 1;
-    if(cw>MAX_W||ch>MAX_H){
-        ratio = Math.min(MAX_W/cw, MAX_H/ch);
-        cw = Math.round(cw*ratio);
-        ch = Math.round(ch*ratio);
+    var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (var i = 0; i < pts.length; i++) {
+        var p = pts[i];
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.y > maxY) maxY = p.y;
     }
-    const shiftX = pad-minX, shiftY = pad-minY;
-    const dp = dpr();
-    canvas.width = cw*dp;
-    canvas.height = ch*dp;
-    canvas.style.width = cw+'px';
-    canvas.style.height = ch+'px';
-    ctx.clearRect(0,0,canvas.width,canvas.height);
+    var safe = 90, pad = 35;
+    minX -= safe; maxX += safe; minY -= safe; maxY += safe;
+    var cw = (maxX - minX) + pad * 2;
+    var ch = (maxY - minY) + pad * 2;
+    var ratio = 1;
+    if (cw > MAX_W || ch > MAX_H) {
+        ratio = Math.min(MAX_W / cw, MAX_H / ch);
+        cw = Math.round(cw * ratio);
+        ch = Math.round(ch * ratio);
+    }
+    var shiftX = pad - minX, shiftY = pad - minY;
+    var dp = window.devicePixelRatio || 1;
+    canvas.width = cw * dp;
+    canvas.height = ch * dp;
+    canvas.style.width = cw + 'px';
+    canvas.style.height = ch + 'px';
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.save();
-    ctx.scale(dp*ratio, dp*ratio);
-    const apexX = shiftX, apexY = baseApexY+shiftY;
-    const workY = baseWorkY+shiftY;
-    const upY = lightY+shiftY;
-    ctx.fillStyle="#3498eb";
-    ctx.fillRect(apexX-32,apexY-55,64,50);
-    ctx.fillStyle="#000";
-    ctx.font="bold 22px Arial";
-    ctx.textAlign="center";
-    ctx.fillText("CST",apexX,apexY-23);
-    ctx.fillStyle="#666";
-    ctx.fillRect(apexX-22,apexY-5,44,35);
-    const wL = apexX-halfWork, wR = apexX+halfWork;
-    const lL = apexX-halfLight, lR = apexX+halfLight;
-    ctx.strokeStyle="#000";ctx.lineWidth=2;
-    ctx.beginPath();ctx.moveTo(apexX,apexY);ctx.lineTo(wL,workY);ctx.stroke();
-    ctx.beginPath();ctx.moveTo(apexX,apexY);ctx.lineTo(wR,workY);ctx.stroke();
-    ctx.beginPath();ctx.moveTo(wL,workY);ctx.lineTo(wR,workY);ctx.stroke();
-    ctx.setLineDash([8,5]);ctx.lineWidth=1.5;
-    ctx.beginPath();ctx.moveTo(wL,workY);ctx.lineTo(lL,upY);ctx.stroke();
-    ctx.beginPath();ctx.moveTo(wR,workY);ctx.lineTo(lR,upY);ctx.stroke();
-    ctx.beginPath();ctx.moveTo(lL,upY);ctx.lineTo(lR,upY);ctx.stroke();
+    ctx.scale(dp * ratio, dp * ratio);
+    var apexX = shiftX, apexY = baseApexY + shiftY;
+    var workY = baseWorkY + shiftY;
+    var upY = lightY + shiftY;
+    var downY = downPlaneY + shiftY;
+
+    // ========== 替换蓝色方块+CST，使用镜头图片 ==========
+    const imgW = 30;
+    const imgH = 95;
+    const imgX = apexX - imgW / 2;
+    const imgY = apexY - 80;
+    if (lensImage.complete) {
+        ctx.drawImage(lensImage, imgX, imgY, imgW, imgH);
+    } else {
+        // 图片加载失败降级显示原方块
+        ctx.fillStyle = "#3498eb";
+        ctx.fillRect(apexX - 32, apexY - 55, 64, 50);
+        ctx.fillStyle = "#000";
+        ctx.font = "bold 22px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText("CST", apexX, apexY - 23);
+        ctx.fillStyle = "#666";
+        ctx.fillRect(apexX - 22, apexY - 5, 44, 35);
+    }
+
+    var wL = apexX - halfWork, wR = apexX + halfWork;
+    var lL = apexX - halfLight, lR = apexX + halfLight;
+    var dL = apexX - halfDown, dR = apexX + halfDown;
+
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(apexX, apexY); ctx.lineTo(wL, workY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(apexX, apexY); ctx.lineTo(wR, workY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(wL, workY); ctx.lineTo(wR, workY); ctx.stroke();
+
+    ctx.setLineDash([8, 5]);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(wL, workY); ctx.lineTo(lL, upY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(wR, workY); ctx.lineTo(lR, upY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(lL, upY); ctx.lineTo(lR, upY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(wL, workY); ctx.lineTo(dL, downY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(wR, workY); ctx.lineTo(dR, downY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(dL, downY); ctx.lineTo(dR, downY); ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle="#c82423";
-    ctx.font="bold 22px Arial";ctx.textAlign="left";
-    ctx.fillText(lightLen.toFixed(0)+" mm",lR+12,upY+8);
-    const arcR = 52;
-    let aL = Math.PI+halfRad-Math.PI/2;
-    let aR = Math.PI-halfRad-Math.PI/2;
-    if(aL<aR)aL+=Math.PI*2;
-    ctx.strokeStyle="#0055ff";ctx.lineWidth=2;
-    drawArc(ctx,apexX,apexY,arcR,aL,aR);
-    ctx.fillStyle="#0055ff";
-    ctx.font="bold 28px Arial";
-    ctx.fillText(FOV.toFixed(1)+"°",apexX+arcR+8,apexY+18);
-    ctx.setLineDash([6,4]);ctx.strokeStyle="#000";ctx.lineWidth=1.5;
-    ctx.beginPath();ctx.moveTo(wL,workY);ctx.lineTo(wL,workY+30);
-    ctx.moveTo(wR,workY);ctx.lineTo(wR,workY+30);
-    ctx.moveTo(wL,workY+15);ctx.lineTo(wR,workY+15);ctx.stroke();
-    ctx.setLineDash([]);
-    const arr=7;
+
+    // 文字右移35，解决遮挡
+    ctx.fillStyle = "#c82423";
+    ctx.font = "bold 22px Arial";
+    ctx.textAlign = "left";
+    ctx.fillText(lightLen.toFixed(0) + " mm", lR + 35, upY + 8);
+    ctx.fillStyle = "#666666";
+    ctx.fillText(lightLen.toFixed(0) + " mm", dR + 35, downY + 8);
+
+    var arcR = 52;
+    var aL = Math.PI + halfRad - Math.PI / 2;
+    var aR = Math.PI - halfRad - Math.PI / 2;
+    if (aL < aR) aL += Math.PI * 2;
+    ctx.strokeStyle = "#0055ff";
+    ctx.lineWidth = 2;
+    drawArc(ctx, apexX, apexY, arcR, aL, aR);
+    // 角度文字左移25，防遮挡
+    ctx.fillStyle = "#0055ff";
+    ctx.font = "bold 28px Arial";
+    ctx.fillText(FOV.toFixed(1) + "°", apexX + arcR - 25, apexY + 18);
+
+    ctx.setLineDash([6, 4]);
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(wL,workY+15);ctx.lineTo(wL+arr,workY+15-arr);
-    ctx.moveTo(wL,workY+15);ctx.lineTo(wL+arr,workY+15+arr);
-    ctx.moveTo(wR,workY+15);ctx.lineTo(wR-arr,workY+15-arr);
-    ctx.moveTo(wR,workY+15);ctx.lineTo(wR-arr,workY+15+arr);
+    ctx.moveTo(wL, workY); ctx.lineTo(wL, workY + 30);
+    ctx.moveTo(wR, workY); ctx.lineTo(wR, workY + 30);
+    ctx.moveTo(wL, workY + 15); ctx.lineTo(wR, workY + 15);
     ctx.stroke();
-    ctx.fillStyle="#772299";
-    ctx.font="bold 28px Arial";ctx.textAlign="center";
-    ctx.fillText(workLen.toFixed(0)+" mm",apexX,workY+60);
+    ctx.setLineDash([]);
+    var arr = 7;
+    ctx.beginPath();
+    ctx.moveTo(wL, workY + 15); ctx.lineTo(wL + arr, workY + 15 - arr);
+    ctx.moveTo(wL, workY + 15); ctx.lineTo(wL + arr, workY + 15 + arr);
+    ctx.moveTo(wR, workY + 15); ctx.lineTo(wR - arr, workY + 15 - arr);
+    ctx.moveTo(wR, workY + 15); ctx.lineTo(wR - arr, workY + 15 + arr);
+    ctx.stroke();
+    ctx.fillStyle = "#772299";
+    ctx.font = "bold 28px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText(workLen.toFixed(0) + " mm", apexX, workY + 60);
     ctx.restore();
 }
-
-// 线扫圆弧绘制
-function drawSegmentArc(ctx, cx, cy, radius, startRad, endRad, segmentCount=30){
+function drawSegmentArc(ctx, cx, cy, radius, startRad, endRad, segmentCount) {
+    segmentCount = segmentCount || 30;
     ctx.beginPath();
-    let first = true;
-    let angle = startRad;
-    const step = (endRad - startRad) / segmentCount;
-    for(let i=0;i<=segmentCount;i++){
-        const x = cx + Math.cos(angle) * radius;
-        const y = cy + Math.sin(angle) * radius;
-        first ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
-        first = false;
+    var first = true;
+    var angle = startRad;
+    var step = (endRad - startRad) / segmentCount;
+    for (var i = 0; i <= segmentCount; i++) {
+        var x = cx + Math.cos(angle) * radius;
+        var y = cy + Math.sin(angle) * radius;
+        if (first) { ctx.moveTo(x, y); first = false; }
+        else { ctx.lineTo(x, y); }
         angle += step;
     }
     ctx.stroke();
 }
+function drawLineCone(ctx, canvas, totalFOV, workLen, lightLen, camDist, lightExtDist) {
+    var baseApexY = 80, baseWorkY = 260;
+    var pixCamDistance = baseWorkY - baseApexY;
+    var halfRad = deg2rad(totalFOV / 2);
+    var halfWorkPix = pixCamDistance * Math.tan(halfRad);
+    var scale = lightLen / workLen;
+    var upOffset = pixCamDistance * (scale - 1);
+    var lightRelY = baseWorkY - upOffset;
+    var downOffset = pixCamDistance * (scale - 1);
+    var downPlaneY = baseWorkY + downOffset;
+    var halfDownPix = halfWorkPix * scale;
 
-// 线扫绘图
-function drawLineCone(ctx, canvas, totalFOV, workLen, lightLen, camDist, lightExtDist){
-    const baseApexY = 80;
-    const baseWorkY = 260;
-    const pixCamDistance = baseWorkY - baseApexY;
-    const halfRad = deg2rad(totalFOV / 2);
-    const halfWorkPix = pixCamDistance * Math.tan(halfRad);
-    const scale = lightLen / workLen;
-    const upOffset = pixCamDistance * (scale - 1);
-    const lightRelY = baseWorkY - upOffset;
-    const wLx = -halfWorkPix;
-    const wRx = halfWorkPix;
-    const lLx = -halfWorkPix * scale;
-    const lRx = halfWorkPix * scale;
-    const points = [
-        {x:0, y:baseApexY-55},
-        {x:0, y:baseApexY+35},
-        {x:wLx, y:baseWorkY},
-        {x:wRx, y:baseWorkY},
-        {x:lLx, y:lightRelY},
-        {x:lRx, y:lightRelY},
-        {x:0, y:baseWorkY+65}
+    var wLx = -halfWorkPix, wRx = halfWorkPix;
+    var lLx = -halfWorkPix * scale, lRx = halfWorkPix * scale;
+    var dLx = -halfDownPix, dRx = halfDownPix;
+
+    var points = [
+        {x: 0, y: baseApexY - 55}, {x: 0, y: baseApexY + 35},
+        {x: wLx, y: baseWorkY}, {x: wRx, y: baseWorkY},
+        {x: lLx, y: lightRelY}, {x: lRx, y: lightRelY},
+        {x: dLx, y: downPlaneY}, {x: dRx, y: downPlaneY},
+        {x: 0, y: baseWorkY + 65}
     ];
-    let minX = Infinity, maxX = -Infinity;
-    let minY = Infinity, maxY = -Infinity;
-    for(let p of points){
-        minX = Math.min(minX, p.x);
-        maxX = Math.max(maxX, p.x);
-        minY = Math.min(minY, p.y);
-        maxY = Math.max(maxY, p.y);
+    var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (var i = 0; i < points.length; i++) {
+        var p = points[i];
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.y > maxY) maxY = p.y;
     }
-    const textSafeW = 90;
-    const textSafeH = 40;
-    minX -= textSafeW;
-    maxX += textSafeW;
-    minY -= textSafeH;
-    maxY += textSafeH;
-    const pad = 35;
-    let canvasW = (maxX - minX) + pad * 2;
-    let canvasH = (maxY - minY) + pad * 2;
-    let scaleRatio = 1;
-    if(canvasW > MAX_W || canvasH > MAX_H) {
-        const ratioW = MAX_W / canvasW;
-        const ratioH = MAX_H / canvasH;
+    var textSafeW = 90, textSafeH = 40;
+    minX -= textSafeW; maxX += textSafeW; minY -= textSafeH; maxY += textSafeH;
+    var pad = 35;
+    var canvasW = (maxX - minX) + pad * 2;
+    var canvasH = (maxY - minY) + pad * 2;
+    var scaleRatio = 1;
+    if (canvasW > MAX_W || canvasH > MAX_H) {
+        var ratioW = MAX_W / canvasW;
+        var ratioH = MAX_H / canvasH;
         scaleRatio = Math.min(ratioW, ratioH);
         canvasW = Math.round(canvasW * scaleRatio);
         canvasH = Math.round(canvasH * scaleRatio);
     }
-    const shiftX = pad - minX;
-    const shiftY = pad - minY;
+    var shiftX = pad - minX, shiftY = pad - minY;
     canvas.width = canvasW;
     canvas.height = canvasH;
-    ctx.clearRect(0,0,canvasW,canvasH);
+    ctx.clearRect(0, 0, canvasW, canvasH);
     ctx.save();
     ctx.scale(scaleRatio, scaleRatio);
-    const apexX = shiftX;
-    const apexY = baseApexY + shiftY;
-    const workLineY = baseWorkY + shiftY;
-    const upY = lightRelY + shiftY;
-    ctx.fillStyle = '#3498eb';
-    ctx.fillRect(apexX-32, apexY-55, 64, 50);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 22px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText('CST', apexX, apexY - 23);
-    ctx.fillStyle = '#666666';
-    ctx.fillRect(apexX-22, apexY - 5, 44, 35);
-    const realWLx = apexX + wLx;
-    const realWRx = apexX + wRx;
-    const realLLx = apexX + lLx;
-    const realLRx = apexX + lRx;
+    var apexX = shiftX, apexY = baseApexY + shiftY;
+    var workLineY = baseWorkY + shiftY;
+    var upY = lightRelY + shiftY;
+    var downY = downPlaneY + shiftY;
+
+    // ========== 线扫图替换镜头方块为图片 ==========
+    const imgW = 30;
+    const imgH = 95;
+    const imgX = apexX - imgW / 2;
+    const imgY = apexY - 80;
+    if (lensImage.complete) {
+        ctx.drawImage(lensImage, imgX, imgY, imgW, imgH);
+    } else {
+        ctx.fillStyle = '#3498eb';
+        ctx.fillRect(apexX - 32, apexY - 55, 64, 50);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 22px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('CST', apexX, apexY - 23);
+    }
+
+    var realWLx = apexX + wLx, realWRx = apexX + wRx;
+    var realLLx = apexX + lLx, realLRx = apexX + lRx;
+    var realDLx = apexX + dLx, realDRx = apexX + dRx;
+
     ctx.strokeStyle = '#000';
     ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(apexX, apexY);
-    ctx.lineTo(realWLx, workLineY);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(apexX, apexY);
-    ctx.lineTo(realWRx, workLineY);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(realWLx, workLineY);
-    ctx.lineTo(realWRx, workLineY);
-    ctx.stroke();
-    ctx.setLineDash([8,5]);
+    ctx.beginPath(); ctx.moveTo(apexX, apexY); ctx.lineTo(realWLx, workLineY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(apexX, apexY); ctx.lineTo(realWRx, workLineY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(realWLx, workLineY); ctx.lineTo(realWRx, workLineY); ctx.stroke();
+
+    ctx.setLineDash([8, 5]);
     ctx.strokeStyle = '#000';
     ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(realWLx, workLineY);
-    ctx.lineTo(realLLx, upY);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(realWRx, workLineY);
-    ctx.lineTo(realLRx, upY);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(realLLx, upY);
-    ctx.lineTo(realLRx, upY);
-    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(realWLx, workLineY); ctx.lineTo(realLLx, upY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(realWRx, workLineY); ctx.lineTo(realLRx, upY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(realLLx, upY); ctx.lineTo(realLRx, upY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(realWLx, workLineY); ctx.lineTo(realDLx, downY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(realWRx, workLineY); ctx.lineTo(realDRx, downY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(realDLx, downY); ctx.lineTo(realDRx, downY); ctx.stroke();
     ctx.setLineDash([]);
+
+    // 文字右移35防遮挡
     ctx.fillStyle = '#c82423';
     ctx.font = 'bold 22px Arial';
     ctx.textAlign = 'left';
-    ctx.fillText(`${lightLen.toFixed(0)} mm`, realLRx + 12, upY + 8);
-    const arcRadius = 52;
-    const rotate90 = Math.PI / 2;
-    let angL = Math.PI + halfRad - rotate90;
-    let angR = Math.PI - halfRad - rotate90;
-    let startA = angL;
-    let endA = angR;
-    if(startA < endA) startA += Math.PI * 2;
+    ctx.fillText(lightLen.toFixed(0) + ' mm', realLRx + 35, upY + 8);
+    ctx.fillStyle = '#666666';
+    ctx.fillText(lightLen.toFixed(0) + ' mm', realDRx + 35, downY + 8);
+
+    var arcRadius = 52;
+    var rotate90 = Math.PI / 2;
+    var angL = Math.PI + halfRad - rotate90;
+    var angR = Math.PI - halfRad - rotate90;
+    var startA = angL, endA = angR;
+    if (startA < endA) startA += Math.PI * 2;
     ctx.strokeStyle = '#0055ff';
     ctx.lineWidth = 2;
     drawSegmentArc(ctx, apexX, apexY, arcRadius, startA, endA);
+    // 角度文字左移25
     ctx.fillStyle = '#0055ff';
     ctx.font = 'bold 28px Arial';
     ctx.textAlign = 'left';
-    ctx.fillText(totalFOV.toFixed(1) + '°', apexX + arcRadius + 8, apexY + 18);
-    ctx.setLineDash([6,4]);
+    ctx.fillText(totalFOV.toFixed(1) + '°', apexX + arcRadius - 25, apexY + 18);
+
+    ctx.setLineDash([6, 4]);
     ctx.strokeStyle = '#000';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(realWLx, workLineY);
-    ctx.lineTo(realWLx, workLineY + 30);
-    ctx.moveTo(realWRx, workLineY);
-    ctx.lineTo(realWRx, workLineY + 30);
-    ctx.moveTo(realWLx, workLineY + 15);
-    ctx.lineTo(realWRx, workLineY + 15);
+    ctx.moveTo(realWLx, workLineY); ctx.lineTo(realWLx, workLineY + 30);
+    ctx.moveTo(realWRx, workLineY); ctx.lineTo(realWRx, workLineY + 30);
+    ctx.moveTo(realWLx, workLineY + 15); ctx.lineTo(realWRx, workLineY + 15);
     ctx.stroke();
     ctx.setLineDash([]);
-    const arrSz = 7;
+    var arrSz = 7;
     ctx.beginPath();
-    ctx.moveTo(realWLx, workLineY + 15);
-    ctx.lineTo(realWLx + arrSz, workLineY + 15 - arrSz);
-    ctx.moveTo(realWLx, workLineY + 15);
-    ctx.lineTo(realWLx + arrSz, workLineY + 15 + arrSz);
-    ctx.moveTo(realWRx, workLineY + 15);
-    ctx.lineTo(realWRx - arrSz, workLineY + 15 - arrSz);
-    ctx.moveTo(realWRx, workLineY + 15);
-    ctx.lineTo(realWRx - arrSz, workLineY + 15 + arrSz);
+    ctx.moveTo(realWLx, workLineY + 15); ctx.lineTo(realWLx + arrSz, workLineY + 15 - arrSz);
+    ctx.moveTo(realWLx, workLineY + 15); ctx.lineTo(realWLx + arrSz, workLineY + 15 + arrSz);
+    ctx.moveTo(realWRx, workLineY + 15); ctx.lineTo(realWRx - arrSz, workLineY + 15 - arrSz);
+    ctx.moveTo(realWRx, workLineY + 15); ctx.lineTo(realWRx - arrSz, workLineY + 15 + arrSz);
     ctx.stroke();
     ctx.fillStyle = '#772299';
     ctx.font = 'bold 28px Arial';
@@ -597,78 +885,81 @@ function drawLineCone(ctx, canvas, totalFOV, workLen, lightLen, camDist, lightEx
     ctx.fillText(workLen.toFixed(0) + ' mm', apexX, workLineY + 60);
     ctx.restore();
 }
-
-// 主计算逻辑
-function calculate(){
-    const activeBtn = document.querySelector('.tool-toggle-btn.active');
-    const tool = activeBtn.dataset.tool;
+function calculate() {
+    var activeBtn = document.querySelector('.tool-toggle-btn.active');
+    var tool = activeBtn.dataset.tool;
     document.getElementById('resultCard').style.display = 'block';
     document.getElementById('canvasCard').style.display = 'block';
-    if(tool === 'area'){
-        const sw = +document.getElementById('senW').value;
-        const sh = +document.getElementById('senH').value;
-        const f = +document.getElementById('focal').value;
-        const dCam = +document.getElementById('distCam').value;
-        const dLight = +document.getElementById('distLight').value;
-        if([sw,sh,f,dCam,dLight].some(v=>isNaN(v)||v<=0)) return alert('所有输入必须为大于0的数字');
-        const fovH = rad2deg(2*Math.atan(sw/(2*f)));
-        const fovV = rad2deg(2*Math.atan(sh/(2*f)));
-        const fovD = rad2deg(2*Math.atan(Math.hypot(sw,sh)/(2*f)));
-        const wReal = sw*dCam/f;
-        const hReal = sh*dCam/f;
-        const wLight = sw*(dCam+dLight)/f;
-        const hLight = sh*(dCam+dLight)/f;
-        document.getElementById('fovH').innerText = fovH.toFixed(2)+' °';
-        document.getElementById('fovV').innerText = fovV.toFixed(2)+' °';
-        document.getElementById('fovD').innerText = fovD.toFixed(2)+' °';
-        document.getElementById('sizeText').innerText = `${wReal.toFixed(2)} mm × ${hReal.toFixed(2)} mm`;
-        document.getElementById('lightLenW').innerText = wLight.toFixed(2)+' mm';
-        document.getElementById('lightLenH').innerText = hLight.toFixed(2)+' mm';
-        drawCone(ctxH,canH,fovH,wReal,wLight);
-        drawCone(ctxV,canV,fovV,hReal,hLight);
-    }else{
-        const realW = parseFloat(document.getElementById('realW').value);
-        const distCam = parseFloat(document.getElementById('distCamLine').value);
-        const distLight = parseFloat(document.getElementById('distLightLine').value);
-        if([realW,distCam,distLight].some(v=>isNaN(v)||v<=0)){
+    if (tool === 'area') {
+        var sw = parseFloat(document.getElementById('senW').value);
+        var sh = parseFloat(document.getElementById('senH').value);
+        var f = parseFloat(document.getElementById('focal').value);
+        var dCam = parseFloat(document.getElementById('distCam').value);
+        var dLight = parseFloat(document.getElementById('distLight').value);
+        if (isNaN(sw) || isNaN(sh) || isNaN(f) || isNaN(dCam) || isNaN(dLight) || sw <= 0 || sh <= 0 || f <= 0 || dCam <= 0 || dLight <= 0) {
+            alert('所有输入必须为大于0的数字');
+            return;
+        }
+        var fovH = rad2deg(2 * Math.atan(sw / (2 * f)));
+        var fovV = rad2deg(2 * Math.atan(sh / (2 * f)));
+        var fovD = rad2deg(2 * Math.atan(Math.hypot(sw, sh) / (2 * f)));
+        var wReal = sw * dCam / f;
+        var hReal = sh * dCam / f;
+        var wLight = sw * (dCam + dLight) / f;
+        var hLight = sh * (dCam + dLight) / f;
+        document.getElementById('fovH').innerText = fovH.toFixed(2) + ' °';
+        document.getElementById('fovV').innerText = fovV.toFixed(2) + ' °';
+        document.getElementById('fovD').innerText = fovD.toFixed(2) + ' °';
+        document.getElementById('sizeText').innerText = wReal.toFixed(2) + ' mm × ' + hReal.toFixed(2) + ' mm';
+        document.getElementById('lightLenW').innerText = wLight.toFixed(2) + ' mm';
+        document.getElementById('lightLenH').innerText = hLight.toFixed(2) + ' mm';
+        drawCone(ctxH, canH, fovH, wReal, wLight);
+        drawCone(ctxV, canV, fovV, hReal, hLight);
+    } else {
+        var realW = parseFloat(document.getElementById('realW').value);
+        var distCam = parseFloat(document.getElementById('distCamLine').value);
+        var distLight = parseFloat(document.getElementById('distLightLine').value);
+        if (isNaN(realW) || isNaN(distCam) || isNaN(distLight) || realW <= 0 || distCam <= 0 || distLight <= 0) {
             alert('所有输入必须为大于0的有效数字');
             return;
         }
-        const halfRad = Math.atan( (realW/2) / distCam );
-        const fovH = rad2deg( 2 * halfRad );
-        const lightW = realW * (distCam + distLight) / distCam;
+        var halfRad = Math.atan((realW / 2) / distCam);
+        var fovH = rad2deg(2 * halfRad);
+        var lightW = realW * (distCam + distLight) / distCam;
         document.getElementById('fovHLine').textContent = fovH.toFixed(2) + ' °';
-        document.getElementById('sizeText').textContent = `${realW.toFixed(2)} mm`;
-        document.getElementById('lightSizeLine').textContent = `${lightW.toFixed(2)} mm`;
+        document.getElementById('sizeText').textContent = realW.toFixed(2) + ' mm';
+        document.getElementById('lightSizeLine').textContent = lightW.toFixed(2) + ' mm';
         drawLineCone(ctxLine, canLine, fovH, realW, lightW, distCam, distLight);
     }
 }
-
-// 重置清空
-function resetAll(){
-    document.querySelectorAll('input').forEach(el=>el.value='');
+function resetAll() {
+    var inputs = document.querySelectorAll('input');
+    for (var i = 0; i < inputs.length; i++) {
+        inputs[i].value = '';
+    }
     document.getElementById('fovH').innerText = '--';
     document.getElementById('fovV').innerText = '--';
     document.getElementById('fovD').innerText = '--';
     document.getElementById('sizeText').innerText = '--';
     document.getElementById('lightLenW').innerText = '--';
     document.getElementById('lightLenH').innerText = '--';
-    document.getElementById('fovHLine').textContent='--';
-    document.getElementById('lightSizeLine').textContent='--';
+    document.getElementById('fovHLine').textContent = '--';
+    document.getElementById('lightSizeLine').textContent = '--';
     document.getElementById('resultCard').style.display = 'none';
     document.getElementById('canvasCard').style.display = 'none';
-    ctxH.clearRect(0,0,canH.width,canH.height);
-    ctxV.clearRect(0,0,canV.width,canV.height);
-    ctxLine.clearRect(0,0,canLine.width,canLine.height);
-    canH.width=800;canH.height=200;canH.style.width=canH.style.height='';
-    canV.width=800;canV.height=200;canV.style.width=canV.style.height='';
-    canLine.width=800;canLine.height=200;canLine.style.width=canLine.style.height='';
+    ctxH.clearRect(0, 0, canH.width, canH.height);
+    ctxV.clearRect(0, 0, canV.width, canV.height);
+    ctxLine.clearRect(0, 0, canLine.width, canLine.height);
+    canH.width = 800; canH.height = 200; canH.style.width = ''; canH.style.height = '';
+    canV.width = 800; canV.height = 200; canV.style.width = ''; canV.style.height = '';
+    canLine.width = 800; canLine.height = 200; canLine.style.width = ''; canLine.style.height = '';
 }
-
 calcBtn.onclick = calculate;
 resetBtn.onclick = resetAll;
-window.addEventListener('resize',()=>{
-    if(document.getElementById('resultCard').style.display==='block') calculate();
+window.addEventListener('resize', function() {
+    if (document.getElementById('resultCard').style.display === 'block') {
+        calculate();
+    }
 });
 </script>
 </body>
