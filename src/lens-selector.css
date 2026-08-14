@@ -1,0 +1,436 @@
+/* ===== 镜头选型器专用样式 ===== */
+#lineSelectorWrap {
+    display: block;
+    width: 100%;
+    margin-top: 8px;
+    min-height: 80vh;
+}
+
+.line-selector-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: stretch;
+    gap: 40px;
+    padding: 20px 24px 18px 24px;
+    background: #f7f9fc;
+    border-radius: 16px;
+    margin-bottom: 20px;
+    min-height: 200px;
+}
+
+/* ===== 输入区域（白色卡片） ===== */
+.line-selector-top .input-area {
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 16px;
+    align-content: start;
+    background: #fff;
+    border-radius: 14px;
+    border: 1px solid #eef0f4;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    padding: 16px 20px;
+}
+
+.line-selector-top .input-area .form-item {
+    margin-bottom: 0;
+}
+
+.line-selector-top .input-area .form-item label {
+    font-size: 13px;
+    color: #4e5969;
+    font-weight: 500;
+    margin-bottom: 4px;
+}
+
+.line-selector-top .input-area .form-item input,
+.line-selector-top .input-area .form-item select {
+    padding: 10px 14px;
+    font-size: 15px;
+    border-radius: 8px;
+    max-width: 200px;
+    width: 100%;
+}
+
+/* 按钮所在行 */
+.line-selector-top .input-area .form-item:last-child {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    padding-top: 4px;
+    max-width: 316px;
+    justify-self: start;
+}
+
+#lineCalcBtn {
+    flex: 1;
+    min-width: 0;
+    max-width: 100%;
+    background: linear-gradient(135deg, #232730, #000);
+    color: #fff;
+    border: none;
+    padding: 10px 18px;
+    border-radius: 10px;
+    font-size: 15px;
+    cursor: pointer;
+    transition: 0.25s;
+}
+
+#lineResetBtn {
+    flex: 0 0 80px;
+    background: #f2f3f5;
+    color: #4e5969;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 18px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+/* ===== 结果区域（白色卡片） ===== */
+.line-selector-top .result-area {
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 10px;
+    background: #fff;
+    border-radius: 14px;
+    padding: 10px 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    align-content: start;
+    border: 1px solid #eef0f4;
+    max-width: 450px;
+    min-width: 400px;
+    box-sizing: border-box;
+}
+
+/* 选中镜头显示框 */
+.selected-lens-area {
+    background: #fff;
+    border-radius: 14px;
+    padding: 12px 16px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    border: 1px solid #eef0f4;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.selected-lens-area .selected-lens-label {
+    font-size: 13px;
+    color: #8c95a6;
+    margin-bottom: 4px;
+}
+
+.selected-lens-area .selected-lens-value {
+    font-size: 18px;
+    font-weight: 600;
+    color: #1d2129;
+    text-align: center;
+    word-break: break-all;
+    max-width: 100%;
+}
+
+.result-area .result-item {
+    text-align: center;
+    background: #f8faff;
+    border-radius: 10px;
+    padding: 6px 6px;
+    border: 1px solid #eef0f4;
+}
+
+.result-area .result-item .r-label {
+    font-size: 12px;
+    color: #8c95a6;
+    margin-bottom: 2px;
+}
+
+.result-area .result-item .r-value {
+    font-size: 16px;
+    font-weight: 700;
+    color: #1d2129;
+}
+
+.result-area .result-item .r-value.accent-blue {
+    color: #0066ff;
+}
+.result-area .result-item .r-value.accent-green {
+    color: #00aa66;
+}
+.result-area .result-item .r-value.accent-orange {
+    color: #ff7700;
+}
+.result-area .result-item .r-value.accent-purple {
+    color: #8844cc;
+}
+
+/* ===== 镜头列表 ===== */
+.line-selector-bottom {
+    background: #f7f9fc;
+    border-radius: 16px;
+    padding: 18px 20px 20px 20px;
+    min-height: 400px;
+    overflow: visible;
+}
+
+.line-selector-bottom .section-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #1d2129;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.line-selector-bottom .section-title small {
+    font-size: 14px;
+    font-weight: 400;
+    color: #8c95a6;
+}
+
+.lens-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px 30px;
+}
+
+.lens-series-col {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* ===== 系列分组 ===== */
+.lens-series-group {
+    background: #fff;
+    border-radius: 12px;
+    border: 1px solid #e8eaed;
+    overflow: hidden;
+    margin-bottom: 12px;
+    transition: 0.2s;
+}
+
+.lens-series-group:hover {
+    border-color: #4080ff;
+    box-shadow: 0 2px 8px rgba(64, 128, 255, 0.08);
+}
+
+.lens-series-header {
+    background: #f0f4ff;
+    padding: 8px 16px;
+    font-weight: 700;
+    font-size: 16px;
+    color: #1d2129;
+    border-bottom: 1px solid #e8eaed;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+}
+
+.lens-series-header .badge {
+    font-size: 12px;
+    font-weight: 400;
+    background: #4080ff20;
+    color: #4080ff;
+    padding: 0 10px;
+    border-radius: 12px;
+    line-height: 22px;
+}
+
+.lens-series-body {
+    padding: 10px 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+/* ===== 镜头卡片 ===== */
+.lens-card {
+    flex: 0 0 calc(33.33% - 10px);
+    min-width: 100px;
+    max-width: 160px;
+    background: #f8faff;
+    border-radius: 10px;
+    border: 1px solid #eef0f4;
+    padding: 6px 8px;
+    transition: 0.2s;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.lens-card:hover {
+    border-color: #4080ff;
+    box-shadow: 0 2px 8px rgba(64, 128, 255, 0.10);
+}
+
+.lens-card.selected {
+    background: #e6f0ff !important;
+    border-color: #4080ff !important;
+    box-shadow: 0 0 0 2px rgba(64, 128, 255, 0.2) !important;
+}
+
+.lens-card.unavailable-card {
+    background: #fff0f0 !important;
+    border-color: #ffcccc !important;
+}
+
+.lens-card .lens-name {
+    font-weight: 600;
+    font-size: 14px;
+    color: #1d2129;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.lens-card .lens-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 13px;
+    color: #4e5969;
+}
+
+.lens-card .lens-detail .row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.lens-card .lens-detail .label {
+    color: #8c95a6;
+    font-size: 12px;
+}
+
+.lens-card .lens-detail .value {
+    font-weight: 500;
+    color: #1d2129;
+}
+.lens-card .lens-detail .value.ok {
+    color: #140900;
+}
+.lens-card .lens-detail .value.unavailable {
+    color: #cc3344;
+}
+.lens-card .lens-detail .value.ring {
+    color: #ff7700;
+}
+
+.lens-empty {
+    text-align: center;
+    color: #b0b8c4;
+    padding: 30px 0;
+    font-size: 14px;
+}
+
+/* ===== 上传按钮 ===== */
+.line-upload-btn {
+    padding: 6px 12px;
+    font-size: 13px;
+    border: 1px solid #dcdfe6;
+    border-radius: 6px;
+    background: #f7f8fa;
+    cursor: pointer;
+    transition: 0.2s;
+}
+.line-upload-btn:hover {
+    background: #e8eaed;
+}
+.line-upload-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* ===== 响应式 ===== */
+@media (max-width: 820px) {
+    .line-selector-top {
+        flex-direction: column;
+        gap: 16px;
+        padding: 16px;
+    }
+    .line-selector-top .input-area {
+        grid-template-columns: 1fr 1fr;
+        gap: 10px 16px;
+    }
+    .line-selector-top .result-area {
+        grid-template-columns: 1fr 1fr;
+        gap: 8px 12px;
+        padding: 12px 14px;
+        min-width: unset;
+        max-width: 100%;
+    }
+    .lens-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+    .line-selector-bottom {
+        max-height: none;
+        padding: 14px 12px;
+    }
+}
+
+@media (max-width: 480px) {
+    .line-selector-top .input-area {
+        grid-template-columns: 1fr;
+    }
+    .line-selector-top .result-area {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+/* 滚动条美化 */
+.line-selector-bottom::-webkit-scrollbar {
+    width: 5px;
+}
+.line-selector-bottom::-webkit-scrollbar-track {
+    background: #eef0f4;
+    border-radius: 6px;
+}
+.line-selector-bottom::-webkit-scrollbar-thumb {
+    background: #c0c8d4;
+    border-radius: 6px;
+}
+
+
+/* 面阵更新框 – 与镜头选型保持一致 */
+#shared-upload-area .data-upload-area {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #fff;
+    padding: 10px 16px;
+    border-radius: 14px;
+    border: 1px solid #eef0f4;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    min-height: 50px;
+}
+
+#shared-upload-area .update-btn {
+    padding: 8px 18px;
+    font-size: 14px;
+    border: none;
+    border-radius: 8px;
+    background: #f0f4ff;
+    color: #1d2129;
+    cursor: pointer;
+    font-weight: 500;
+    transition: 0.2s;
+    white-space: nowrap;
+}
+
+#shared-upload-area .update-btn:hover {
+    background: #e0e8ff;
+}
+
+
