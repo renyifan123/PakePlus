@@ -20,6 +20,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.133.0/examples/js/controls/DragControls.js">
     </script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 </head>
 
 <body>
@@ -31,518 +32,539 @@
         <button class="tool-toggle-btn" data-tool="area">面阵光源计算</button>
     </div>
     <div id="areaWrap" class="area-wrap"
-        style="display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; gap: 24px; align-items: flex-start;">
-        <div class="card" id="inputWrap" style="flex: 0 0 30%; min-width: 320px; max-width: 30%;">
-            <div class="card-subtitle-wrap">
-                <h2 class="card-subtitle">参数输入</h2>
-                <!-- 共享的文件上传区域 -->
-                <button class="update-btn" id="updateDataBtn">📂 更新数据</button>
-                <input type="file" id="fileUpload" accept=".xlsx,.xls" style="display:none;" />
-        </div>
+        style="display: flex ; flex-direction: row ; flex-wrap: nowrap ; gap: 24px; align-items: flex-start;">
+        <!-- ===== 左侧面板：输入卡片 + 预览卡片垂直排列 ===== -->
+        <div id="leftPanel" style="display: flex; flex-direction: column; gap: 8px; flex: 0 0 30%; min-width: 320px;">
 
-        <div class="sub-tab-wrap area-item">
-            <div class="sub-tab-level1">
-                <button class="sub-tab-btn level1 active" data-group="size">📏 尺寸计算</button>
-                <button class="sub-tab-btn level1" data-group="spot">💡 光斑计算</button>
-            </div>
-            <div class="sub-tab-level2" id="level2-size">
-                <button class="sub-tab-btn level2 active" data-sub="size-face">📐 面光</button>
-                <button class="sub-tab-btn level2" data-sub="size-bar">📏 条光</button>
-                <button class="sub-tab-btn level2" data-sub="size-ring">⭕ 环光</button>
-                <button class="sub-tab-btn level2" data-sub="size-custom">🔧 定制面光</button>
-                <button class="sub-tab-btn level2" data-sub="size-back">💡 背光</button>
-            </div>
-            <div class="sub-tab-level2" id="level2-spot" style="display:none;">
-                <button class="sub-tab-btn level2 active" data-sub="spot-face">📐 面光</button>
-                <button class="sub-tab-btn level2" data-sub="spot-coax">💡 同轴光</button>
-                <button class="sub-tab-btn level2" data-sub="spot-ring">⭕ 环光</button>
-            </div>
-        </div>
+            <!-- 参数输入卡片 -->
+            <div class="card" id="inputWrap" style="flex: none;">
+                <div class="card-subtitle-wrap">
+                    <h2 class="card-subtitle">参数输入</h2>
+                    <!-- 共享的文件上传区域 -->
+                    <button class="update-btn" id="updateDataBtn">📂 更新数据</button>
+                    <input type="file" id="fileUpload" accept=".xlsx,.xls" style="display:none;" />
+                </div>
 
-        
+                <div class="sub-tab-wrap area-item">
+                    <div class="sub-tab-level1">
+                        <button class="sub-tab-btn level1 active" data-group="size">尺寸计算</button>
+                        <button class="sub-tab-btn level1" data-group="spot">光斑计算</button>
+                    </div>
+                    <div class="sub-tab-level2" id="level2-size">
+                        <button class="sub-tab-btn level2 active" data-sub="size-face">🔲 平面同轴</button>
+                        <button class="sub-tab-btn level2" data-sub="size-bar">➖ 条光</button>
+                        <button class="sub-tab-btn level2" data-sub="size-ring">⭕ 环光</button>
+                        <button class="sub-tab-btn level2" data-sub="size-custom">🔧 定制面光</button>
+                        <button class="sub-tab-btn level2" data-sub="size-back">⬜ 背光</button>
+                        <button class="sub-tab-btn level2" data-sub="size-coax">⏹️ 同轴光</button>
+                        <button class="sub-tab-btn level2" data-sub="size-dome">💿 圆顶光</button>
+                    </div>
+                    <div class="sub-tab-level2" id="level2-spot" style="display:none;">
+                        <button class="sub-tab-btn level2 active" data-sub="spot-face">🔲 平面同轴</button>
+                        <button class="sub-tab-btn level2" data-sub="spot-coax">⏹️ 同轴光</button>
+                        <button class="sub-tab-btn level2" data-sub="spot-ring">💿 圆顶光</button>
+                    </div>
+                </div>
 
-        <!-- ===== 1. 尺寸计算 - 通用输入组 (面光/条光/环光/背光) ===== -->
-        <div id="size-inputs" class="form-grid">
-            <!-- 相机型号搜索 -->
-            <div class="form-item area-item">
-                <label>选择相机型号</label>
-                <div class="search-select-wrapper" data-select-id="modelSelect">
-                    <input type="text" class="search-select-input" id="modelSelectSearch" placeholder="输入型号搜索..."
-                        autocomplete="off" />
-                    <ul class="search-select-dropdown" id="modelSelectDropdown"></ul>
-                    <select id="modelSelect" style="display:none;"></select>
+
+                <!-- ===== 公共相机和镜头选择器 ===== -->
+                <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+                    <div class="form-item area-item">
+                        <label>选择相机型号</label>
+                        <div class="search-select-wrapper" data-select-id="common-modelSelect">
+                            <input type="text" class="search-select-input" id="common-modelSelectSearch"
+                                placeholder="输入型号搜索..." autocomplete="off" />
+                            <ul class="search-select-dropdown" id="common-modelSelectDropdown"></ul>
+                            <select id="common-modelSelect" style="display:none;"></select>
+                        </div>
+                    </div>
+                    <div class="form-item area-item">
+                        <label>选择镜头型号</label>
+                        <div class="search-select-wrapper" data-select-id="common-lensSelect">
+                            <input type="text" class="search-select-input" id="common-lensSearch"
+                                placeholder="输入镜头型号搜索..." autocomplete="off" />
+                            <ul class="search-select-dropdown" id="common-lensDropdown"></ul>
+                            <select id="common-lensSelect" style="display:none;"></select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===== ⭐ 动态输入区域（由配置驱动渲染） ===== -->
+                <div id="dynamic-input-area" class="form-grid"></div>
+
+                <div class="btn-group">
+                    <button id="calcBtn">计算并生成图纸</button>
+                    <button id="resetBtn">重置清空</button>
                 </div>
             </div>
-            <!-- 镜头型号搜索 -->
-            <div class="form-item area-item">
-                <label>选择镜头型号</label>
-                <div class="search-select-wrapper" data-select-id="size-lensSelect">
-                    <input type="text" class="search-select-input" id="size-lensSearch" placeholder="输入镜头型号搜索..."
-                        autocomplete="off" />
-                    <ul class="search-select-dropdown" id="size-lensDropdown"></ul>
-                    <select id="size-lensSelect" style="display:none;"></select>
+            <!-- 公共预览卡片 -->
+            <div class="card preview-card" id="commonPreviewWrap">
+                <div class="preview-title">📊 预览结果</div>
+                <div class="preview-items">
+                    <span>长边视场角: <strong id="commonFovH" style="color:#0055ff;">--</strong></span>
+                    <span>短边视场角: <strong id="commonFovV" style="color:#009933;">--</strong></span>
+                    <span>对角线视场角: <strong id="commonFovD" style="color:#ff4400;">--</strong></span>
+                    <span>视野尺寸: <strong id="commonSizeText" style="color:#772299;">--</strong></span>
                 </div>
-            </div>
-            <div class="form-item area-item">
-                <label>传感器长边（mm）</label>
-                <input id="size-senW" placeholder="请输入传感器长边" />
-            </div>
-            <div class="form-item area-item">
-                <label>传感器短边（mm）</label>
-                <input id="size-senH" placeholder="请输入传感器短边" />
-            </div>
-            <div class="form-item area-item">
-                <label>相机工作距离（mm）</label>
-                <input id="size-distCam" placeholder="镜头到工件距离" />
-            </div>
-            <div class="form-item area-item">
-                <label for="size-distLight">光源工作距离（mm）</label>
-                <input id="size-distLight" placeholder="光源到工件距离" />
-            </div>
-        </div>
-
-        <!-- ===== 2. 尺寸计算 - 定制面光专用输入组 ===== -->
-        <div id="custom-inputs" class="form-grid" style="display:none;">
-            <div class="form-item area-item">
-                <label>选择相机型号</label>
-                <div class="search-select-wrapper" data-select-id="custom-modelSelect">
-                    <input type="text" class="search-select-input" id="custom-modelSelectSearch" placeholder="输入型号搜索..."
-                        autocomplete="off" />
-                    <ul class="search-select-dropdown" id="custom-modelSelectDropdown"></ul>
-                    <select id="custom-modelSelect" style="display:none;"></select>
-                </div>
-            </div>
-            <div class="form-item area-item">
-                <label>选择镜头型号</label>
-                <div class="search-select-wrapper" data-select-id="custom-lensSelect">
-                    <input type="text" class="search-select-input" id="custom-lensSearch" placeholder="输入镜头型号搜索..."
-                        autocomplete="off" />
-                    <ul class="search-select-dropdown" id="custom-lensDropdown"></ul>
-                    <select id="custom-lensSelect" style="display:none;"></select>
-                </div>
-            </div>
-            <div class="form-item area-item">
-                <label>传感器长边（mm）</label>
-                <input id="custom-senW" placeholder="请输入传感器长边" />
-            </div>
-            <div class="form-item area-item">
-                <label>传感器短边（mm）</label>
-                <input id="custom-senH" placeholder="请输入传感器短边" />
-            </div>
-            <div class="form-item area-item">
-                <label>相机工作距离（mm）</label>
-                <input id="custom-distCam" placeholder="镜头到工件距离" />
-            </div>
-            <div class="form-item area-item">
-                <label for="custom-distLight">视野重叠区域（mm）</label>
-                <input id="custom-distLight" placeholder="请输入视野重叠区域" />
-            </div>
-            <div class="form-item area-item custom-item">
-                <label for="customCameraCount">相机个数</label>
-                <input id="customCameraCount" type="number" step="1" min="1" value="1" placeholder="请输入相机个数" />
-            </div>
-            <div class="form-item area-item custom-item">
-                <label for="arrangementSelect">排列分布</label>
-                <select id="arrangementSelect">
-                    <option value="">-- 请选择排列 --</option>
-                </select>
-            </div>
-            <div class="form-item area-item custom-item" style="grid-column: 1 / -1;">
-                <label for="customHoleSize">开孔尺寸（mm）</label>
-                <input id="customHoleSize" type="number" step="any" min="0" value="0" placeholder="请输入开孔直径" />
             </div>
         </div>
 
-        <!-- ===== 3. 光斑计算 - 通用输入组 (面光/环光) ===== -->
-        <div id="spot-inputs" class="form-grid" style="display:none;">
-            <div class="form-item area-item">
-                <label>选择相机型号</label>
-                <div class="search-select-wrapper" data-select-id="spot-modelSelect">
-                    <input type="text" class="search-select-input" id="spot-modelSelectSearch" placeholder="输入型号搜索..."
-                        autocomplete="off" />
-                    <ul class="search-select-dropdown" id="spot-modelSelectDropdown"></ul>
-                    <select id="spot-modelSelect" style="display:none;"></select>
+
+
+
+        <div class="card" id="resultCard" style="flex: 1; overflow: auto; min-width: 0;">
+            <h2 class="card-subtitle">计算结果</h2>
+            <div class="result-wrap">
+                <!-- 尺寸-平面同轴 -->
+                <div class="sub-result sub-result-size-face">
+                    <div class="result-top-row result-top-row-single">
+                        <div class="result-card"
+                            style="display:flex; justify-content:space-around; align-items:center; padding:16px 20px;">
+                            <div style="text-align:center;">
+                                <div class="card-label">长边视场角:</div>
+                                <div class="card-value" id="sfFovH" style="color:#0055ff; font-size:24px;">--</div>
+                            </div>
+                            <div style="text-align:center;">
+                                <div class="card-label">短边视场角:</div>
+                                <div class="card-value" id="sfFovV" style="color:#009933; font-size:24px;">--</div>
+                            </div>
+                            <div style="text-align:center;">
+                                <div class="card-label">对角线视场角:</div>
+                                <div class="card-value" id="sfFovD" style="color:#ff4400; font-size:24px;">--</div>
+                            </div>
+                        </div>
+                        <div class="result-card" display:flex; flex-direction:row; justify-content:space-between;
+                            align-items:center; padding:16px 20px;">
+                            <div class="card-label">视野尺寸:</div>
+                            <div class="card-value" id="sfSizeText" style="color:#772299; font-size:24px;">--</div>
+                        </div>
+                    </div>
+                    <div class="result-bottom-row">
+                        <div class="result-card light-card">
+                            <span class="card-label">光源尺寸: </span>
+                            <span class="card-value light-row" style="color:#c82423;">
+                                <span>长边：<span id="sfLightW">--</span></span>
+                                <span>短边：<span id="sfLightH">--</span></span>
+                            </span>
+                        </div>
+                    </div>
+                    <div class="three-container" id="three-sf"
+                        style="width:100%; margin-top:20px; border-radius:12px; overflow:hidden; background:#1a1a2e; position:relative;">
+                        <div class="view-toolbar">
+                            <button class="view-btn" onclick="window.setView('front')">正视图</button>
+                            <button class="view-btn" onclick="window.setView('top')">俯视图</button>
+                            <button class="view-btn" onclick="window.setView('left')">侧视图</button>
+                        </div>
+                    </div>
                 </div>
-            </div>
-            <div class="form-item area-item">
-                <label>选择镜头型号</label>
-                <div class="search-select-wrapper" data-select-id="spot-lensSelect">
-                    <input type="text" class="search-select-input" id="spot-lensSearch" placeholder="输入镜头型号搜索..."
-                        autocomplete="off" />
-                    <ul class="search-select-dropdown" id="spot-lensDropdown"></ul>
-                    <select id="spot-lensSelect" style="display:none;"></select>
+
+                <!-- 尺寸-条光 -->
+                <div class="sub-result sub-result-size-bar" style="display:none;">
+                    <div class="result-top-row result-top-row-single">
+                        <div class="result-card"
+                            style="display:flex; justify-content:space-around; align-items:center; padding:16px 20px;">
+                            <div style="text-align:center;">
+                                <div class="card-label">长边视场角:</div>
+                                <div class="card-value" id="sbFovH" style="color:#0055ff; font-size:24px;">--</div>
+                            </div>
+                            <div style="text-align:center;">
+                                <div class="card-label">短边视场角:</div>
+                                <div class="card-value" id="sbFovV" style="color:#009933; font-size:24px;">--</div>
+                            </div>
+                            <div style="text-align:center;">
+                                <div class="card-label">对角线视场角:</div>
+                                <div class="card-value" id="sbFovD" style="color:#ff4400; font-size:24px;">--</div>
+                            </div>
+                        </div>
+                        <div class="result-card" display:flex; flex-direction:row; justify-content:space-between;
+                            align-items:center; padding:16px 20px;">
+                            <div class="card-label">视野尺寸:</div>
+                            <div class="card-value" id="sbSizeText" style="color:#772299; font-size:24px;">--</div>
+                        </div>
+                    </div>
+                    <div class="result-bottom-row">
+                        <div class="result-card light-card">
+                            <span class="card-label">光源尺寸：</span>
+                            <span class="card-value light-row" style="color:#c82423;">
+                                <span>长边：<span id="sbLightW">--</span></span>
+                                <span>短边：<span id="sbLightH">--</span></span>
+                            </span>
+                        </div>
+                    </div>
+                    <div class="three-container" id="three-sb"
+                        style="width:100%; margin-top:20px; border-radius:12px; overflow:hidden; background:#1a1a2e; position:relative;">
+                        <div class="view-toolbar">
+                            <button class="view-btn" onclick="window.setView('front')">正视图</button>
+                            <button class="view-btn" onclick="window.setView('top')">俯视图</button>
+                            <button class="view-btn" onclick="window.setView('left')">侧视图</button>
+                        </div>
+                    </div>
                 </div>
-            </div>
-            <div class="form-item area-item">
-                <label>传感器长边（mm）</label>
-                <input id="spot-senW" placeholder="请输入传感器长边" />
-            </div>
-            <div class="form-item area-item">
-                <label>传感器短边（mm）</label>
-                <input id="spot-senH" placeholder="请输入传感器短边" />
-            </div>
-            <div class="form-item area-item">
-                <label>相机工作距离（mm）</label>
-                <input id="spot-distCam" placeholder="镜头到工件距离" />
-            </div>
-            <div class="form-item area-item">
-                <label for="spot-distLight">光源工作距离（mm）</label>
-                <input id="spot-distLight" placeholder="光源到工件距离" />
-            </div>
-            <div class="form-item area-item coax-only">
-                <label>发光区长边（mm）【备用】</label>
-                <input id="spot-lightLen" placeholder="可选，自动计算时留空" />
-            </div>
-            <div class="form-item area-item coax-only">
-                <label>发光区短边（mm）【备用】</label>
-                <input id="spot-lightWid" placeholder="可选，自动计算时留空" />
+
+                <!-- 尺寸-环光 -->
+                <div class="sub-result sub-result-size-ring" style="display:none;">
+                    <div class="result-top-row result-top-row-single">
+                        <div class="result-card"
+                            style="display:flex; justify-content:space-around; align-items:center; padding:16px 20px;">
+                            <div style="text-align:center;">
+                                <div class="card-label">长边视场角:</div>
+                                <div class="card-value" id="srFovH" style="color:#0055ff; font-size:24px;">--</div>
+                            </div>
+                            <div style="text-align:center;">
+                                <div class="card-label">短边视场角:</div>
+                                <div class="card-value" id="srFovV" style="color:#009933; font-size:24px;">--</div>
+                            </div>
+                            <div style="text-align:center;">
+                                <div class="card-label">对角线视场角:</div>
+                                <div class="card-value" id="srFovD" style="color:#ff4400; font-size:24px;">--</div>
+                            </div>
+                        </div>
+                        <div class="result-card" display:flex; flex-direction:row; justify-content:space-between;
+                            align-items:center; padding:16px 20px;">
+                            <div class="card-label">视野尺寸:</div>
+                            <div class="card-value" id="srSizeText" style="color:#772299; font-size:24px;">--</div>
+                        </div>
+                    </div>
+                    <div class="result-bottom-row">
+                        <div class="result-card light-card">
+                            <span class="card-label">光源尺寸：</span>
+                            <span class="card-value light-row" style="color:#c82423;">
+                                <span>内径：<span id="srInnerDiam">--</span></span>
+                                <span>外径：<span id="srOuterDiam">--</span></span>
+                            </span>
+                        </div>
+                    </div>
+                    <div class="three-container" id="three-sr"
+                        style="width:100%; margin-top:20px; border-radius:12px; overflow:hidden; background:#1a1a2e; position:relative;">
+                        <div class="view-toolbar">
+                            <button class="view-btn" onclick="window.setView('front')">正视图</button>
+                            <button class="view-btn" onclick="window.setView('top')">俯视图</button>
+                            <button class="view-btn" onclick="window.setView('left')">侧视图</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 尺寸-定制面光 -->
+                <div class="sub-result sub-result-size-custom" style="display:none;">
+                    <div class="result-top-row result-top-row-single">
+                        <div class="result-card"
+                            style="display:flex; justify-content:space-around; align-items:center; padding:16px 20px;">
+                            <div style="text-align:center;">
+                                <div class="card-label">长边视场角:</div>
+                                <div class="card-value" id="scFovH" style="color:#0055ff; font-size:24px;">--</div>
+                            </div>
+                            <div style="text-align:center;">
+                                <div class="card-label">短边视场角:</div>
+                                <div class="card-value" id="scFovV" style="color:#009933; font-size:24px;">--</div>
+                            </div>
+                            <div style="text-align:center;">
+                                <div class="card-label">对角线视场角:</div>
+                                <div class="card-value" id="scFovD" style="color:#ff4400; font-size:24px;">--</div>
+                            </div>
+                        </div>
+                        <div class="result-card" display:flex; flex-direction:row; justify-content:space-between;
+                            align-items:center; padding:16px 20px;">
+                            <div class="card-label">单个视野尺寸:</div>
+                            <div class="card-value" id="scSizeText" style="color:#772299; font-size:24px;">--</div>
+                        </div>
+                    </div>
+                    <div class="result-bottom-row">
+                        <div class="result-card light-card">
+                            <span class="card-label">光源尺寸：</span>
+                            <span class="card-value light-row" style="color:#c82423;">
+                                <span>长边：<span id="scLightW">--</span></span>
+                                <span>短边：<span id="scLightH">--</span></span>
+                            </span>
+                        </div>
+                        <div class="result-card" style="grid-column: 1 / -1;">
+                            <div class="card-label">总视野（面积）</div>
+                            <div class="card-value" id="scTotalSize" style="color:#aa66cc">--</div>
+                        </div>
+                    </div>
+                    <div class="canvas-block">
+                        <h4>【光源尺寸：矩形】</h4>
+                        <canvas id="scCanTotal" style="width:100%; height:600px; min-height:500px;"></canvas>
+                    </div>
+                    <div id="three-sc" style="display:none;"></div>
+                </div>
+
+                <!-- 尺寸-背光 -->
+                <div class="sub-result sub-result-size-back" style="display:none;">
+                    <div class="result-top-row result-top-row-single">
+                        <div class="result-card"
+                            style="display:flex; justify-content:space-around; align-items:center; padding:16px 20px;">
+                            <div style="text-align:center;">
+                                <div class="card-label">长边视场角:</div>
+                                <div class="card-value" id="bfFovH" style="color:#0055ff; font-size:24px;">--</div>
+                            </div>
+                            <div style="text-align:center;">
+                                <div class="card-label">短边视场角:</div>
+                                <div class="card-value" id="bfFovV" style="color:#009933; font-size:24px;">--</div>
+                            </div>
+                            <div style="text-align:center;">
+                                <div class="card-label">对角线视场角:</div>
+                                <div class="card-value" id="bfFovD" style="color:#ff4400; font-size:24px;">--</div>
+                            </div>
+                        </div>
+                        <div class="result-card" display:flex; flex-direction:row; justify-content:space-between;
+                            align-items:center; padding:16px 20px;">
+                            <div class="card-label">视野尺寸:</div>
+                            <div class="card-value" id="bfSizeText" style="color:#772299; font-size:24px;">--</div>
+                        </div>
+                    </div>
+                    <div class="result-bottom-row">
+                        <div class="result-card light-card">
+                            <span class="card-label">光源尺寸：</span>
+                            <span class="card-value light-row" style="color:#c82423;">
+                                <span>长边：<span id="bfLightW">--</span></span>
+                                <span>短边：<span id="bfLightH">--</span></span>
+                            </span>
+                        </div>
+                    </div>
+                    <div class="three-container" id="three-bf"
+                        style="width:100%; margin-top:20px; border-radius:12px; overflow:hidden; background:#1a1a2e; position:relative;">
+                        <div class="view-toolbar">
+                            <button class="view-btn" onclick="window.setView('front')">正视图</button>
+                            <button class="view-btn" onclick="window.setView('top')">俯视图</button>
+                            <button class="view-btn" onclick="window.setView('left')">侧视图</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 尺寸-同轴光 -->
+                <div class="sub-result sub-result-size-coax" style="display:none;">
+                    <div class="result-top-row result-top-row-single">
+                        <div class="result-card"
+                            style="display:flex; justify-content:space-around; align-items:center; padding:16px 20px;">
+                            <div style="text-align:center;">
+                                <div class="card-label">长边视场角:</div>
+                                <div class="card-value" id="coaxFovH" style="color:#0055ff; font-size:24px;">--
+                                </div>
+                            </div>
+                            <div style="text-align:center;">
+                                <div class="card-label">短边视场角:</div>
+                                <div class="card-value" id="coaxFovV" style="color:#009933; font-size:24px;">--
+                                </div>
+                            </div>
+                            <div style="text-align:center;">
+                                <div class="card-label">对角线视场角:</div>
+                                <div class="card-value" id="coaxFovD" style="color:#ff4400; font-size:24px;">--
+                                </div>
+                            </div>
+                        </div>
+                        <div class="result-card"
+                            style="display:flex; flex-direction:row; justify-content:space-between; align-items:center; padding:16px 20px;">
+                            <div class="card-label">视野尺寸:</div>
+                            <div class="card-value" id="coaxSizeText" style="color:#772299; font-size:24px;">--
+                            </div>
+                        </div>
+                    </div>
+                    <div class="result-bottom-row">
+                        <div class="result-card light-card">
+                            <span class="card-label">光源尺寸：</span>
+                            <span class="card-value light-row" style="color:#c82423;">
+                                <span>长边：<span id="coaxLightW">--</span></span>
+                                <span>短边：<span id="coaxLightH">--</span></span>
+                            </span>
+                        </div>
+                    </div>
+                    <div class="three-container" id="three-coax"
+                        style="width:100%; margin-top:20px; border-radius:12px; overflow:hidden; background:#1a1a2e; position:relative;">
+                        <div class="view-toolbar">
+                            <button class="view-btn" onclick="window.setView('front')">正视图</button>
+                            <button class="view-btn" onclick="window.setView('top')">俯视图</button>
+                            <button class="view-btn" onclick="window.setView('left')">侧视图</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 尺寸-圆顶光 -->
+                <div class="sub-result sub-result-size-dome" style="display:none;">
+                    <div class="result-top-row result-top-row-single">
+                        <div class="result-card"
+                            style="display:flex; justify-content:space-around; align-items:center; padding:16px 20px;">
+                            <div style="text-align:center;">
+                                <div class="card-label">长边视场角:</div>
+                                <div class="card-value" id="domeFovH" style="color:#0055ff; font-size:24px;">--
+                                </div>
+                            </div>
+                            <div style="text-align:center;">
+                                <div class="card-label">短边视场角:</div>
+                                <div class="card-value" id="domeFovV" style="color:#009933; font-size:24px;">--
+                                </div>
+                            </div>
+                            <div style="text-align:center;">
+                                <div class="card-label">对角线视场角:</div>
+                                <div class="card-value" id="domeFovD" style="color:#ff4400; font-size:24px;">--
+                                </div>
+                            </div>
+                        </div>
+                        <div class="result-card"
+                            style="display:flex; flex-direction:row; justify-content:space-between; align-items:center; padding:16px 20px;">
+                            <div class="card-label">视野尺寸:</div>
+                            <div class="card-value" id="domeSizeText" style="color:#772299; font-size:24px;">--
+                            </div>
+                        </div>
+                    </div>
+                    <div class="result-bottom-row">
+                        <div class="result-card light-card">
+                            <span class="card-label">光源尺寸：</span>
+                            <span class="card-value light-row" style="color:#c82423;">
+                                <span>长边：<span id="domeLightW">--</span></span>
+                                <span>短边：<span id="domeLightH">--</span></span>
+                            </span>
+                        </div>
+                    </div>
+                    <div class="three-container" id="three-dome"
+                        style="width:100%; margin-top:20px; border-radius:12px; overflow:hidden; background:#1a1a2e; position:relative;">
+                        <div class="view-toolbar">
+                            <button class="view-btn" onclick="window.setView('front')">正视图</button>
+                            <button class="view-btn" onclick="window.setView('top')">俯视图</button>
+                            <button class="view-btn" onclick="window.setView('left')">侧视图</button>
+                        </div>
+                    </div>
+                </div>
+
+
+
+
+
+
+
+
+
+                <!-- 光斑-平面同轴 -->
+                <div class="sub-result sub-result-spot-face" style="display:none;">
+                    <div class="result-top-row result-top-row-single">
+                        <div class="result-card"
+                            style="display:flex; justify-content:space-around; align-items:center; padding:16px 20px;">
+                            <div style="text-align:center;">
+                                <div class="card-label">长边视场角:</div>
+                                <div class="card-value" id="spfFovH" style="color:#0055ff; font-size:24px;">--</div>
+                            </div>
+                            <div style="text-align:center;">
+                                <div class="card-label">短边视场角:</div>
+                                <div class="card-value" id="spfFovV" style="color:#009933; font-size:24px;">--</div>
+                            </div>
+                            <div style="text-align:center;">
+                                <div class="card-label">对角线视场角:</div>
+                                <div class="card-value" id="spfFovD" style="color:#ff4400; font-size:24px;">--</div>
+                            </div>
+                        </div>
+                        <div class="result-card" display:flex; flex-direction:row; justify-content:space-between;
+                            align-items:center; padding:16px 20px;">
+                            <div class="card-label">视野尺寸:</div>
+                            <div class="card-value" id="spfSizeText" style="color:#772299; font-size:24px;">--</div>
+                        </div>
+                    </div>
+                    <div class="result-bottom-row">
+
+                        <div class="result-card">
+                            <div class="card-label">有效光斑尺寸</div>
+                            <div class="card-value" id="spfSpotText" style="color:#c82423">--</div>
+                        </div>
+                    </div>
+                    <div class="three-container" id="three-spf"
+                        style="width:100%; margin-top:20px; border-radius:12px; overflow:hidden; background:#1a1a2e; position:relative;">
+                        <div class="view-toolbar">
+                            <button class="view-btn" onclick="window.setView('front')">正视图</button>
+                            <button class="view-btn" onclick="window.setView('top')">俯视图</button>
+                            <button class="view-btn" onclick="window.setView('left')">侧视图</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 光斑-同轴光 -->
+                <div class="sub-result sub-result-spot-coax" style="display:none;">
+                    <div class="result-top-row result-top-row-single">
+                        <div class="result-card"
+                            style="display:flex; justify-content:space-around; align-items:center; padding:16px 20px;">
+                            <div style="text-align:center;">
+                                <div class="card-label">长边视场角:</div>
+                                <div class="card-value" id="spcFovH" style="color:#0055ff; font-size:24px;">--</div>
+                            </div>
+                            <div style="text-align:center;">
+                                <div class="card-label">短边视场角:</div>
+                                <div class="card-value" id="spcFovV" style="color:#009933; font-size:24px;">--</div>
+                            </div>
+                            <div style="text-align:center;">
+                                <div class="card-label">对角线视场角:</div>
+                                <div class="card-value" id="spcFovD" style="color:#ff4400; font-size:24px;">--</div>
+                            </div>
+                        </div>
+                        <div class="result-card" display:flex; flex-direction:row; justify-content:space-between;
+                            align-items:center; padding:16px 20px;">
+                            <div class="card-label">视野尺寸:</div>
+                            <div class="card-value" id="spcSizeText" style="color:#772299; font-size:24px;">--</div>
+                        </div>
+                    </div>
+                    <div class="result-bottom-row" style="grid-template-columns: 1fr 1fr 1fr;">
+                        <div class="result-card">
+                            <div class="card-label">发光区尺寸</div>
+                            <div class="card-value" id="spcLightText" style="color:#0088cc">--</div>
+                        </div>
+                        <div class="result-card">
+                            <div class="card-label">有效光斑尺寸</div>
+                            <div class="card-value" id="spcSpotText" style="color:#c82423">--</div>
+                        </div>
+                    </div>
+                    <div class="three-container" id="three-spc"
+                        style="width:100%; margin-top:20px; border-radius:12px; overflow:hidden; background:#1a1a2e; position:relative;">
+                        <div class="view-toolbar">
+                            <button class="view-btn" onclick="window.setView('front')">正视图</button>
+                            <button class="view-btn" onclick="window.setView('top')">俯视图</button>
+                            <button class="view-btn" onclick="window.setView('left')">侧视图</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 光斑-环光 -->
+                <div class="sub-result sub-result-spot-ring" style="display:none;">
+                    <div class="result-top-row result-top-row-single">
+                        <div class="result-card"
+                            style="display:flex; justify-content:space-around; align-items:center; padding:16px 20px;">
+                            <div style="text-align:center;">
+                                <div class="card-label">长边视场角:</div>
+                                <div class="card-value" id="sprFovH" style="color:#0055ff; font-size:24px;">--</div>
+                            </div>
+                            <div style="text-align:center;">
+                                <div class="card-label">短边视场角:</div>
+                                <div class="card-value" id="sprFovV" style="color:#009933; font-size:24px;">--</div>
+                            </div>
+                            <div style="text-align:center;">
+                                <div class="card-label">对角线视场角:</div>
+                                <div class="card-value" id="sprFovD" style="color:#ff4400; font-size:24px;">--</div>
+                            </div>
+                        </div>
+                        <div class="result-card" display:flex; flex-direction:row; justify-content:space-between;
+                            align-items:center; padding:16px 20px;">
+                            <div class="card-label">视野尺寸:</div>
+                            <div class="card-value" id="sprSizeText" style="color:#772299; font-size:24px;">--</div>
+                        </div>
+                    </div>
+                    <div class="result-bottom-row">
+                        <div class="result-card">
+                            <div class="card-label">环光光斑尺寸</div>
+                            <div class="card-value" id="sprSpotText" style="color:#c82423">--</div>
+                        </div>
+                    </div>
+                    <div class="three-container" id="three-spr"
+                        style="width:100%; margin-top:20px; border-radius:12px; overflow:hidden; background:#1a1a2e; position:relative;">
+                        <div class="view-toolbar">
+                            <button class="view-btn" onclick="window.setView('front')">正视图</button>
+                            <button class="view-btn" onclick="window.setView('top')">俯视图</button>
+                            <button class="view-btn" onclick="window.setView('left')">侧视图</button>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </div>
 
-        <!-- ===== 4. 光斑计算 - 同轴光专用输入组 ===== -->
-        <div id="coax-inputs" class="form-grid" style="display:none;">
-            <div class="form-item area-item">
-                <label>选择相机型号</label>
-                <div class="search-select-wrapper" data-select-id="coax-modelSelect">
-                    <input type="text" class="search-select-input" id="coax-modelSelectSearch" placeholder="输入型号搜索..."
-                        autocomplete="off" />
-                    <ul class="search-select-dropdown" id="coax-modelSelectDropdown"></ul>
-                    <select id="coax-modelSelect" style="display:none;"></select>
-                </div>
-            </div>
-            <div class="form-item area-item">
-                <label>选择镜头型号</label>
-                <div class="search-select-wrapper" data-select-id="coax-lensSelect">
-                    <input type="text" class="search-select-input" id="coax-lensSearch" placeholder="输入镜头型号搜索..."
-                        autocomplete="off" />
-                    <ul class="search-select-dropdown" id="coax-lensDropdown"></ul>
-                    <select id="coax-lensSelect" style="display:none;"></select>
-                </div>
-            </div>
-            <div class="form-item area-item">
-                <label>传感器长边（mm）</label>
-                <input id="coax-senW" placeholder="请输入传感器长边" />
-            </div>
-            <div class="form-item area-item">
-                <label>传感器短边（mm）</label>
-                <input id="coax-senH" placeholder="请输入传感器短边" />
-            </div>
-            <div class="form-item area-item">
-                <label>相机工作距离（mm）</label>
-                <input id="coax-distCam" placeholder="镜头到工件距离" />
-            </div>
-            <div class="form-item area-item">
-                <label>光源工作距离（mm）</label>
-                <input id="coax-distLight" placeholder="光源到工件距离" />
-            </div>
-            <div class="form-item area-item">
-                <label>发光区长边（mm）【备用】</label>
-                <input id="coax-lightLen" placeholder="可选，自动计算时留空" />
-            </div>
-            <div class="form-item area-item">
-                <label>发光区短边（mm）【备用】</label>
-                <input id="coax-lightWid" placeholder="可选，自动计算时留空" />
-            </div>
-        </div>
 
-        <div class="btn-group">
-            <button id="calcBtn">计算并生成图纸</button>
-            <button id="resetBtn">重置清空</button>
-        </div>
-    </div>
 
-    <div class="card" id="resultCard" style="flex: 1; overflow: auto; min-width: 0; display: block;">
-        <h2 class="card-subtitle">计算结果</h2>
-        <div class="result-wrap">
-            <!-- 尺寸-面光 -->
-            <div class="sub-result sub-result-size-face">
-                <div class="result-top-row result-top-row-single">
-                    <div class="result-card"
-                        style="display:flex; justify-content:space-around; align-items:center; padding:16px 20px;">
-                        <div style="text-align:center;">
-                            <div class="card-label">长边视场角</div>
-                            <div class="card-value" id="sfFovH" style="color:#0055ff; font-size:24px;">--</div>
-                        </div>
-                        <div style="text-align:center;">
-                            <div class="card-label">短边视场角</div>
-                            <div class="card-value" id="sfFovV" style="color:#009933; font-size:24px;">--</div>
-                        </div>
-                        <div style="text-align:center;">
-                            <div class="card-label">对角线视场角</div>
-                            <div class="card-value" id="sfFovD" style="color:#ff4400; font-size:24px;">--</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="result-bottom-row">
-                    <div class="result-card">
-                        <div class="card-label">视野尺寸</div>
-                        <div class="card-value" id="sfSizeText" style="color:#772299">--</div>
-                    </div>
-                    <div class="result-card">
-                        <div class="card-label">光源尺寸</div>
-                        <div class="card-value" style="color:#c82423">长边：<span id="sfLightW">--</span><br />短边：<span
-                                id="sfLightH">--</span></div>
-                    </div>
-                </div>
-                <div class="three-container" id="three-sf"
-                    style="width:100%; margin-top:20px; border-radius:12px; overflow:hidden; background:#1a1a2e; position:relative;">
-                </div>
-            </div>
+        <div class="card" id="canvasCard" style="display:none;"></div>
 
-            <!-- 尺寸-条光 -->
-            <div class="sub-result sub-result-size-bar" style="display:none;">
-                <div class="result-top-row result-top-row-single">
-                    <div class="result-card"
-                        style="display:flex; justify-content:space-around; align-items:center; padding:16px 20px;">
-                        <div style="text-align:center;">
-                            <div class="card-label">长边视场角</div>
-                            <div class="card-value" id="sbFovH" style="color:#0055ff; font-size:24px;">--</div>
-                        </div>
-                        <div style="text-align:center;">
-                            <div class="card-label">短边视场角</div>
-                            <div class="card-value" id="sbFovV" style="color:#009933; font-size:24px;">--</div>
-                        </div>
-                        <div style="text-align:center;">
-                            <div class="card-label">对角线视场角</div>
-                            <div class="card-value" id="sbFovD" style="color:#ff4400; font-size:24px;">--</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="result-bottom-row">
-                    <div class="result-card">
-                        <div class="card-label">视野尺寸</div>
-                        <div class="card-value" id="sbSizeText" style="color:#772299">--</div>
-                    </div>
-                    <div class="result-card">
-                        <div class="card-label">光源尺寸</div>
-                        <div class="card-value" style="color:#c82423">长边：<span id="sbLightW">--</span><br />短边：<span
-                                id="sbLightH">--</span></div>
-                    </div>
-                </div>
-                <div class="three-container" id="three-sb"
-                    style="width:100%; margin-top:20px; border-radius:12px; overflow:hidden; background:#1a1a2e; position:relative;">
-                </div>
-            </div>
-
-            <!-- 尺寸-环光 -->
-            <div class="sub-result sub-result-size-ring" style="display:none;">
-                <div class="result-top-row result-top-row-single">
-                    <div class="result-card"
-                        style="display:flex; justify-content:space-around; align-items:center; padding:16px 20px;">
-                        <div style="text-align:center;">
-                            <div class="card-label">长边视场角</div>
-                            <div class="card-value" id="srFovH" style="color:#0055ff; font-size:24px;">--</div>
-                        </div>
-                        <div style="text-align:center;">
-                            <div class="card-label">短边视场角</div>
-                            <div class="card-value" id="srFovV" style="color:#009933; font-size:24px;">--</div>
-                        </div>
-                        <div style="text-align:center;">
-                            <div class="card-label">对角线视场角</div>
-                            <div class="card-value" id="srFovD" style="color:#ff4400; font-size:24px;">--</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="result-bottom-row">
-                    <div class="result-card">
-                        <div class="card-label">视野尺寸</div>
-                        <div class="card-value" id="srSizeText" style="color:#772299">--</div>
-                    </div>
-                    <div class="result-card">
-                        <div class="card-label">光源尺寸</div>
-                        <div class="card-value" style="color:#c82423">内径：<span id="srInnerDiam">--</span><br />外径：<span
-                                id="srOuterDiam">--</span></div>
-                    </div>
-                </div>
-                <div class="three-container" id="three-sr"
-                    style="width:100%; margin-top:20px; border-radius:12px; overflow:hidden; background:#1a1a2e; position:relative;">
-                </div>
-            </div>
-
-            <!-- 尺寸-定制面光 -->
-            <div class="sub-result sub-result-size-custom" style="display:none;">
-                <div class="result-top-row result-top-row-single">
-                    <div class="result-card"
-                        style="display:flex; justify-content:space-around; align-items:center; padding:16px 20px;">
-                        <div style="text-align:center;">
-                            <div class="card-label">长边视场角</div>
-                            <div class="card-value" id="scFovH" style="color:#0055ff; font-size:24px;">--</div>
-                        </div>
-                        <div style="text-align:center;">
-                            <div class="card-label">短边视场角</div>
-                            <div class="card-value" id="scFovV" style="color:#009933; font-size:24px;">--</div>
-                        </div>
-                        <div style="text-align:center;">
-                            <div class="card-label">对角线视场角</div>
-                            <div class="card-value" id="scFovD" style="color:#ff4400; font-size:24px;">--</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="result-bottom-row">
-                    <div class="result-card">
-                        <div class="card-label">视野尺寸</div>
-                        <div class="card-value" id="scSizeText" style="color:#772299">--</div>
-                    </div>
-                    <div class="result-card">
-                        <div class="card-label">光源尺寸</div>
-                        <div class="card-value" style="color:#c82423">长边：<span id="scLightW">--</span><br />短边：<span
-                                id="scLightH">--</span></div>
-                    </div>
-                    <div class="result-card" style="grid-column: 1 / -1;">
-                        <div class="card-label">总视野（面积）</div>
-                        <div class="card-value" id="scTotalSize" style="color:#aa66cc">--</div>
-                    </div>
-                </div>
-                <div class="canvas-block">
-                    <h4>【光源尺寸矩形】</h4>
-                    <canvas id="scCanTotal" style="width:100%; height:600px; min-height:500px;"></canvas>
-                </div>
-                <div id="three-sc" style="display:none;"></div>
-            </div>
-
-            <!-- 尺寸-背光 -->
-            <div class="sub-result sub-result-size-back" style="display:none;">
-                <div class="result-top-row result-top-row-single">
-                    <div class="result-card"
-                        style="display:flex; justify-content:space-around; align-items:center; padding:16px 20px;">
-                        <div style="text-align:center;">
-                            <div class="card-label">长边视场角</div>
-                            <div class="card-value" id="bfFovH" style="color:#0055ff; font-size:24px;">--</div>
-                        </div>
-                        <div style="text-align:center;">
-                            <div class="card-label">短边视场角</div>
-                            <div class="card-value" id="bfFovV" style="color:#009933; font-size:24px;">--</div>
-                        </div>
-                        <div style="text-align:center;">
-                            <div class="card-label">对角线视场角</div>
-                            <div class="card-value" id="bfFovD" style="color:#ff4400; font-size:24px;">--</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="result-bottom-row">
-                    <div class="result-card">
-                        <div class="card-label">视野尺寸</div>
-                        <div class="card-value" id="bfSizeText" style="color:#772299">--</div>
-                    </div>
-                    <div class="result-card">
-                        <div class="card-label">光源尺寸</div>
-                        <div class="card-value" style="color:#c82423">长边：<span id="bfLightW">--</span><br />短边：<span
-                                id="bfLightH">--</span></div>
-                    </div>
-                </div>
-                <div class="three-container" id="three-bf"
-                    style="width:100%; margin-top:20px; border-radius:12px; overflow:hidden; background:#1a1a2e; position:relative;">
-                </div>
-            </div>
-
-            <!-- 光斑-面光 -->
-            <div class="sub-result sub-result-spot-face" style="display:none;">
-                <div class="result-top-row result-top-row-single">
-                    <div class="result-card"
-                        style="display:flex; justify-content:space-around; align-items:center; padding:16px 20px;">
-                        <div style="text-align:center;">
-                            <div class="card-label">长边视场角</div>
-                            <div class="card-value" id="spfFovH" style="color:#0055ff; font-size:24px;">--</div>
-                        </div>
-                        <div style="text-align:center;">
-                            <div class="card-label">短边视场角</div>
-                            <div class="card-value" id="spfFovV" style="color:#009933; font-size:24px;">--</div>
-                        </div>
-                        <div style="text-align:center;">
-                            <div class="card-label">对角线视场角</div>
-                            <div class="card-value" id="spfFovD" style="color:#ff4400; font-size:24px;">--</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="result-bottom-row">
-                    <div class="result-card">
-                        <div class="card-label">视野尺寸</div>
-                        <div class="card-value" id="spfSizeText" style="color:#772299">--</div>
-                    </div>
-                    <div class="result-card">
-                        <div class="card-label">有效光斑尺寸</div>
-                        <div class="card-value" id="spfSpotText" style="color:#c82423">--</div>
-                    </div>
-                </div>
-                <div class="three-container" id="three-spf"
-                    style="width:100%; margin-top:20px; border-radius:12px; overflow:hidden; background:#1a1a2e; position:relative;">
-                </div>
-            </div>
-
-            <!-- 光斑-同轴光 -->
-            <div class="sub-result sub-result-spot-coax" style="display:none;">
-                <div class="result-top-row result-top-row-single">
-                    <div class="result-card"
-                        style="display:flex; justify-content:space-around; align-items:center; padding:16px 20px;">
-                        <div style="text-align:center;">
-                            <div class="card-label">长边视场角</div>
-                            <div class="card-value" id="spcFovH" style="color:#0055ff; font-size:24px;">--</div>
-                        </div>
-                        <div style="text-align:center;">
-                            <div class="card-label">短边视场角</div>
-                            <div class="card-value" id="spcFovV" style="color:#009933; font-size:24px;">--</div>
-                        </div>
-                        <div style="text-align:center;">
-                            <div class="card-label">对角线视场角</div>
-                            <div class="card-value" id="spcFovD" style="color:#ff4400; font-size:24px;">--</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="result-bottom-row" style="grid-template-columns: 1fr 1fr 1fr;">
-                    <div class="result-card">
-                        <div class="card-label">视野尺寸</div>
-                        <div class="card-value" id="spcSizeText" style="color:#772299">--</div>
-                    </div>
-                    <div class="result-card">
-                        <div class="card-label">发光区尺寸</div>
-                        <div class="card-value" id="spcLightText" style="color:#0088cc">--</div>
-                    </div>
-                    <div class="result-card">
-                        <div class="card-label">有效光斑尺寸</div>
-                        <div class="card-value" id="spcSpotText" style="color:#c82423">--</div>
-                    </div>
-                </div>
-                <div class="three-container" id="three-spc"
-                    style="width:100%; margin-top:20px; border-radius:12px; overflow:hidden; background:#1a1a2e; position:relative;">
-                </div>
-            </div>
-
-            <!-- 光斑-环光 -->
-            <div class="sub-result sub-result-spot-ring" style="display:none;">
-                <div class="result-top-row result-top-row-single">
-                    <div class="result-card"
-                        style="display:flex; justify-content:space-around; align-items:center; padding:16px 20px;">
-                        <div style="text-align:center;">
-                            <div class="card-label">长边视场角</div>
-                            <div class="card-value" id="sprFovH" style="color:#0055ff; font-size:24px;">--</div>
-                        </div>
-                        <div style="text-align:center;">
-                            <div class="card-label">短边视场角</div>
-                            <div class="card-value" id="sprFovV" style="color:#009933; font-size:24px;">--</div>
-                        </div>
-                        <div style="text-align:center;">
-                            <div class="card-label">对角线视场角</div>
-                            <div class="card-value" id="sprFovD" style="color:#ff4400; font-size:24px;">--</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="result-bottom-row">
-                    <div class="result-card">
-                        <div class="card-label">视野尺寸</div>
-                        <div class="card-value" id="sprSizeText" style="color:#772299">--</div>
-                    </div>
-                    <div class="result-card">
-                        <div class="card-label">环光光斑尺寸</div>
-                        <div class="card-value" id="sprSpotText" style="color:#c82423">--</div>
-                    </div>
-                </div>
-                <div class="three-container" id="three-spr"
-                    style="width:100%; margin-top:20px; border-radius:12px; overflow:hidden; background:#1a1a2e; position:relative;">
-                </div>
-            </div>
-
-        </div>
-    </div>
     </div>
     <!-- ============================================================ -->
     <!--  镜头选型器 HTML 结构（独立模块）                             -->
@@ -593,11 +615,13 @@
                 </div>
                 <div class="result-item">
                     <div class="r-label">📏 工作距离</div>
-                    <div class="r-value" id="lineResWD" style="font-size:18px; font-weight:600; color:#0066ff;">--</div>
+                    <div class="r-value" id="lineResWD" style="font-size:18px; font-weight:600; color:#0066ff;">--
+                    </div>
                 </div>
                 <div class="result-item">
                     <div class="r-label">🔩 螺纹规格</div>
-                    <div class="r-value" id="lineResThread" style="font-size:18px; font-weight:600; color:#1d2129;">--
+                    <div class="r-value" id="lineResThread" style="font-size:18px; font-weight:600; color:#1d2129;">
+                        --
                     </div>
                 </div>
             </div>
@@ -662,7 +686,15 @@
         </div>
     </div>
 
-    <div class="card" id="canvasCard" style="display:none;"></div>
+
+    <!-- 新增：模块配置 -->
+    <script src="modules-config.js"></script>
+
+    <!-- 新增：数据管理模块 -->
+    <script src="data-manager.js"></script>
+
+    <!-- 新增：Three.js 场景模块 -->
+    <script src="three-scene.js"></script>
 
     <script src="script.js"></script>
     <!-- 镜头选型器独立脚本 -->
