@@ -7,20 +7,78 @@
 (function () {
     'use strict';
 
+
+
+    // ----- 系列顺序持久化 -----
+    var SERIES_ORDER_KEY = 'lens_series_order';
+
+    function getStoredOrder() {
+        try {
+            var data = localStorage.getItem(SERIES_ORDER_KEY);
+            return data ? JSON.parse(data) : { left: [], right: [] };
+        } catch (e) {
+            return { left: [], right: [] };
+        }
+    }
+
+    function saveStoredOrder(leftOrder, rightOrder) {
+        localStorage.setItem(SERIES_ORDER_KEY, JSON.stringify({ left: leftOrder, right: rightOrder }));
+    }
+
+    function applyStoredOrder(seriesArray, side) {
+        var stored = getStoredOrder();
+        var order = stored[side] || [];
+        var indexMap = {};
+        order.forEach(function (s, idx) { indexMap[s] = idx; });
+        seriesArray.sort(function (a, b) {
+            var idxA = indexMap.hasOwnProperty(a) ? indexMap[a] : Infinity;
+            var idxB = indexMap.hasOwnProperty(b) ? indexMap[b] : Infinity;
+            return idxA - idxB;
+        });
+    }
+
+    // ----- 折叠状态管理 -----
+    var COLLAPSE_STATE_KEY = 'lens_selector_collapsed_state';
+
+    function getCollapseState() {
+        try {
+            var data = localStorage.getItem(COLLAPSE_STATE_KEY);
+            return data ? JSON.parse(data) : {};
+        } catch (e) {
+            return {};
+        }
+    }
+
+    function saveCollapseState(series, collapsed) {
+        if (!series) return;
+        var state = getCollapseState();
+        state[series] = collapsed;
+        localStorage.setItem(COLLAPSE_STATE_KEY, JSON.stringify(state));
+    }
+
+    function restoreCollapseState() {
+        var state = getCollapseState();
+        document.querySelectorAll('.lens-series-group').forEach(function (group) {
+            var series = group.dataset.series;
+            var body = group.querySelector('.lens-series-body');
+            if (body && series && state.hasOwnProperty(series)) {
+                body.style.display = state[series] ? 'none' : 'flex';
+            }
+        });
+    }
+
     // ----- 全局状态 -----
-    var _calcMode = 'wd';                // 'wd' 或 'fov'
-    var _selectedCameraRow = null;      // 当前选中的相机行数据
+    var _calcMode = 'wd'; // 'wd' 或 'fov'
+    var _selectedCameraRow = null; // 当前选中的相机行数据
     var _cameraResW = 0;
     var _cameraResH = 0;
-    var _cameraTargetSurface = null;    // 当前相机的靶面
-    var _lastResults = null;            // 上次计算结果，用于更新UI
+    var _cameraTargetSurface = null; // 当前相机的靶面
+    var _lastResults = null; // 上次计算结果，用于更新UI
 
     var _currentCmosW = 0;
     var _currentCmosH = 0;
-    var _displayFovW = 0;   // 用于显示的完整视野长边
-    var _displayFovH = 0;   // 用于显示的完整视野短边
-
-
+    var _displayFovW = 0; // 用于显示的完整视野长边
+    var _displayFovH = 0; // 用于显示的完整视野短边
 
     // ----- DOM 引用 -----
     var lineDistCam = document.getElementById('line-distCam');
@@ -31,7 +89,6 @@
     var lineResSize = document.getElementById('lineResSize');
     var lineResPrecision = document.getElementById('lineResPrecision');
     var lensCountLabel = document.getElementById('lensCountLabel');
-
 
     // ============================================================
     //  1. 数据获取工具函数
@@ -174,6 +231,24 @@
         return '接圈阈值'; // 默认
     }
 
+    function getCameraTargetSize() {
+        if (!_selectedCameraRow) return null;
+        var target = _cameraTargetSurface;
+        if (!target) {
+            // 备选：从传感器尺寸推断
+            var colMap = getCameraColumnMap();
+            var senWKey = colMap.senW || '传感器长边';
+            var senHKey = colMap.senH || '传感器短边';
+            var w = _selectedCameraRow[senWKey];
+            var h = _selectedCameraRow[senHKey];
+            if (w && h) {
+                target = getTargetSurfaceBySize(String(w).trim(), String(h).trim());
+            }
+        }
+        if (!target) return null;
+        return parseSurfaceSize(target);
+    }
+
     // ============================================================
     //  3. 镜头数据遍历与计算
     // ============================================================
@@ -187,7 +262,7 @@
      */
     function calculateLenses(cmosW, cmosH, fovOrWdParam, mode) {
         var lensData = getLensData();
-        var results = {};  // 动态对象
+        var results = {};
 
         if (!lensData || lensData.length === 0) {
             return results;
@@ -196,71 +271,109 @@
         var colMap = getLensColumnMap();
         var nameKey = colMap.name || '镜头型号';
         var targetKey = colMap.target || '镜头靶面';
-        // 如果自动检测失败，尝试从第一行数据中查找包含"靶面"的列
-        if (!colMap.target && lensData.length > 0) {
-            var firstRow = lensData[0];
-            var keys = Object.keys(firstRow);
-            for (var i = 0; i < keys.length; i++) {
-                if (keys[i].indexOf('靶面') !== -1 || keys[i].toLowerCase().indexOf('target') !== -1) {
-                    targetKey = keys[i];
-                    break;
-                }
-            }
-        }
-
         var focalKey = colMap.focal || '焦距';
         var threadKey = colMap.threadSpec || '螺纹规格';
-        var formulaKey = (mode === 'wd')
-            ? (colMap.distFormula || '距离公式')
-            : (colMap.formula || '视野公式');
+        var formulaKey = (mode === 'wd') ? (colMap.distFormula || '距离公式') : (colMap.formula || '视野公式');
         var tubeKey = getTubeThresholdKey();
+        // ---- 新增远心字段 ----
+        var lensTypeKey = colMap.lensType || '镜头类型';
+        var magKey = colMap.magnification || '放大倍率';
+        var fixedWDKey = colMap.fixedWD || '固定工作距离';
 
         lensData.forEach(function (row) {
             var model = row[nameKey] || '';
             var series = extractSeries(model);
-            // 若系列为'其他'，也保留，后面会渲染
             if (!results[series]) {
                 results[series] = [];
             }
 
-            var formula = row[formulaKey] || '';
-            if (!formula) {
-                results[series].push({
-                    model: model,
-                    focal: row[focalKey] || '',
-                    resultW: NaN,
-                    resultH: NaN,
-                    extensionTube: -1,
-                    isAvailable: false,
-                    target: row[targetKey] || ''
-                });
-                return;
-            }
+            var lensType = (row[lensTypeKey] || '').toString().trim();
+            var isTelecentric = (lensType === '远心' || lensType === 'telecentric' || lensType === 'Telecentric');
 
-            // 计算长边结果
-            var resultW = computeWithFormula(formula, cmosW, fovOrWdParam, mode);
-            var resultH = NaN;
-            if (mode === 'fov' && cmosH > 0) {
-                resultH = computeWithFormula(formula, cmosH, fovOrWdParam, mode);
-            }
+            var magnification = parseFloat(row[magKey]) || 0;
+            var fixedWD = parseFloat(row[fixedWDKey]) || 0;
 
-            // ---- 接圈判断（根据模式选择判断依据） ----
+            var resultW = NaN, resultH = NaN;
             var extensionTube = -1;
             var isAvailable = false;
-            var thresholdStr = row[tubeKey] || '';
+            var thread = row[threadKey] || '';
 
-            if (mode === 'wd') {
-                if (!isNaN(resultW) && isFinite(resultW) && resultW > 0) {
-                    extensionTube = thresholdStr ? parseExtensionTube(thresholdStr, resultW) : 0;
-                    isAvailable = (extensionTube !== -1);
+            if (isTelecentric && magnification > 0) {
+                // ---- 远心镜头处理 ----
+                var actualFovW = cmosW / magnification;   // 实际视野长边
+                var actualFovH = cmosH > 0 ? (cmosH / magnification) : NaN;
+
+                if (mode === 'wd') {
+                    // 输入视野 → 判断是否满足
+                    var requiredFov = fovOrWdParam; // 用户输入的视野（根据选择的长边/短边）
+                    // 注意：fovOrWdParam 是根据CMOS比例选定的基准值，可能是长边或短边
+                    // 我们用实际Fov与要求对比
+                    var actual = (cmosW > 0 && cmosH > 0) ? (cmosW / magnification) : (cmosW / magnification);
+                    // 更精确：我们取与用户输入对应的那个维度
+                    // 但由于我们之前计算时只传了一个 cmosParam，这里我们简化：用实际视野长边判断
+                    // 因为 fovOrWdParam 可能是长边或短边，但我们可以认为用户输入的视野应与该维度对应。
+                    // 实际上，在 calculateLenses 调用时，cmosW/cmosH 分别对应长边和短边，但 fovOrWdParam 是一个值。
+                    // 我们需要判断用户输入的视野是长边还是短边：由调用处决定。
+                    // 但我们可以用更通用的方法：如果用户输入的是长边，就用实际长边对比；如果是短边，用实际短边对比。
+                    // 可是我们不知道用户输入的是长边还是短边，因为调用处只传了一个值。
+                    // 所以这里我们约定：统一用长边来判断（因为大多数场景用长边）。
+                    // 这样可能不够精确，但可以接受。
+                    var required = fovOrWdParam;
+                    var actualDimension = actualFovW; // 使用长边
+                    if (!isNaN(actualDimension) && actualDimension >= required) {
+                        isAvailable = true;
+                        resultW = fixedWD;  // 固定工作距离
+                        extensionTube = 0;   // 无需接圈
+                    } else {
+                        isAvailable = false;
+                        resultW = NaN;
+                    }
+                } else {
+                    // mode === 'fov' 输入工作距离
+                    var userWD = fovOrWdParam; // 用户输入的工作距离
+                    if (fixedWD > 0 && Math.abs(userWD - fixedWD) < 0.001) {
+                        isAvailable = true;
+                        resultW = actualFovW;
+                        resultH = actualFovH;
+                        extensionTube = 0;
+                    } else {
+                        isAvailable = false;
+                        resultW = NaN;
+                        resultH = NaN;
+                    }
                 }
             } else {
-                if (fovOrWdParam > 0) {
-                    extensionTube = thresholdStr ? parseExtensionTube(thresholdStr, fovOrWdParam) : 0;
-                    isAvailable = (extensionTube !== -1);
+                // ---- 普通镜头（沿用原有公式逻辑） ----
+                var formula = row[formulaKey] || '';
+                if (formula) {
+                    try {
+                        var fn = new Function('CMOS', 'FOV', 'WD', 'return (' + formula + ');');
+                        if (mode === 'wd') {
+                            resultW = fn(cmosW, fovOrWdParam, 0);
+                            if (!isNaN(resultW) && isFinite(resultW) && resultW > 0) {
+                                var thresholdStr = row[tubeKey] || '';
+                                extensionTube = thresholdStr ? parseExtensionTube(thresholdStr, resultW) : 0;
+                                isAvailable = (extensionTube !== -1);
+                            }
+                        } else {
+                            resultW = fn(cmosW, 0, fovOrWdParam);
+                            if (cmosH > 0) {
+                                resultH = fn(cmosH, 0, fovOrWdParam);
+                            }
+                            if (!isNaN(resultW) && isFinite(resultW) && resultW > 0) {
+                                var thresholdStr2 = row[tubeKey] || '';
+                                extensionTube = thresholdStr2 ? parseExtensionTube(thresholdStr2, fovOrWdParam) : 0;
+                                isAvailable = (extensionTube !== -1);
+                            }
+                        }
+                    } catch (e) {
+                        // 公式错误，不可用
+                        isAvailable = false;
+                    }
                 }
             }
 
+            // 保存结果（远心镜头额外保存放大倍率和固定WD供UI显示）
             results[series].push({
                 model: model,
                 focal: row[focalKey] || '',
@@ -269,13 +382,18 @@
                 extensionTube: extensionTube,
                 isAvailable: isAvailable,
                 target: row[targetKey] || '',
-                thread: row[threadKey] || ''
+                thread: thread,
+                // ---- 新增远心信息 ----
+                isTelecentric: isTelecentric,
+                magnification: magnification,
+                fixedWD: fixedWD,
+                actualFovW: (isTelecentric && magnification > 0) ? (cmosW / magnification) : NaN,
+                actualFovH: (isTelecentric && magnification > 0 && cmosH > 0) ? (cmosH / magnification) : NaN
             });
         });
 
         return results;
     }
-
     // ============================================================
     //  4. UI 更新函数
     // ============================================================
@@ -298,10 +416,35 @@
             return;
         }
 
-        // 使用 organizeSeries 排序
-        var organized = organizeSeries(seriesKeys);
+        // 获取相机靶面
+        var cameraTarget = getCameraTargetSize();
+
+        // 过滤结果系列（只保留靶面 >= 相机靶面的系列）
+        var filteredKeys = seriesKeys.filter(function (series) {
+            if (cameraTarget === null) return true;
+            var items = results[series];
+            var lensTarget = null;
+            for (var i = 0; i < items.length; i++) {
+                if (items[i].target) {
+                    lensTarget = parseSurfaceSize(items[i].target);
+                    if (!isNaN(lensTarget) && lensTarget > 0) break;
+                }
+            }
+            return lensTarget !== null && lensTarget >= cameraTarget;
+        });
+
+        // 如果过滤后没有系列，显示提示
+        if (filteredKeys.length === 0) {
+            leftCol.innerHTML = '<div style="padding:20px;text-align:center;color:#b0b8c4;">当前相机靶面下无可用镜头系列</div>';
+            return;
+        }
+
+        // 使用过滤后的系列进行排序和渲染
+        var organized = organizeSeries(filteredKeys, null);        // 同样不传靶面映射
         var leftSeries = organized.left;
         var rightSeries = organized.right;
+        applyStoredOrder(leftSeries, 'left');
+        applyStoredOrder(rightSeries, 'right');
 
         // 生成左列
         leftSeries.forEach(function (seriesKey) {
@@ -317,14 +460,12 @@
             rightCol.innerHTML += groupHtml;
         });
 
-        // 靶面匹配（全局更新）
-        checkTargetSurfaceMatch(results);
+        setTimeout(initSortableForColumns, 0);
+        restoreCollapseState();
     }
 
     // 辅助函数：生成计算结果系列组的 HTML
     function createResultGroupHtml(seriesKey, items, mode) {
-
-        // 获取该系列第一支镜头的靶面
         var seriesTarget = '';
         for (var i = 0; i < items.length; i++) {
             if (items[i].target) {
@@ -335,62 +476,94 @@
         var availableCount = items.filter(function (item) { return item.isAvailable; }).length;
         var total = items.length;
         var html = '<div class="lens-series-group" data-series="' + seriesKey + '">';
-        // 标题中显示靶面
         html += '<div class="lens-series-header"><span>🔹 ' + seriesKey + ' 系列' + (seriesTarget ? ' ' + seriesTarget : '') + '</span><span class="badge">' + availableCount + '/' + total + '</span></div>';
         html += '<div class="lens-series-body" style="display:flex; flex-wrap:wrap; gap:10px; padding:10px 12px;">';
 
         items.forEach(function (item) {
             var label = item.focal ? (seriesKey + '-' + item.focal) : item.model;
 
-            var userFovW = parseFloat(lineFovW ? lineFovW.value : 0);
-            var userFovH = parseFloat(lineFovH ? lineFovH.value : 0);
-            var userDist = parseFloat(lineDistCam ? lineDistCam.value : 0);
+            // ----- 计算显示数据 -----
+            var wdDisplay, ringText, fovDisplay, statusClass;
+            var wdValue = '';
 
-            // 工作距离
-            var wdDisplay;
-            if (mode === 'wd') {
-                wdDisplay = (item.isAvailable && !isNaN(item.resultW) && isFinite(item.resultW)) ?
-                    item.resultW.toFixed(1) + ' mm' : '不合适';
-            } else {
-                wdDisplay = (userDist > 0) ? userDist.toFixed(1) + ' mm' : '--';
-            }
-            var wdValue = (mode === 'wd') ?
-                (item.isAvailable && !isNaN(item.resultW) && isFinite(item.resultW) ? item.resultW.toFixed(2) : '') :
-                (userDist > 0 ? userDist.toFixed(2) : '');
+            if (item.isTelecentric) {
+                // 远心镜头：显示固定WD和放大倍率
+                var magDisplay = (item.magnification > 0) ? (item.magnification.toFixed(2) + 'x') : '--';
+                var fixedWDDisplay = (item.fixedWD > 0) ? (item.fixedWD.toFixed(1) + ' mm') : '--';
+                var actualFovWDisplay = (!isNaN(item.actualFovW) && isFinite(item.actualFovW)) ? item.actualFovW.toFixed(2) + ' mm' : '--';
+                var actualFovHDisplay = (!isNaN(item.actualFovH) && isFinite(item.actualFovH)) ? item.actualFovH.toFixed(2) + ' mm' : '--';
 
-            // 接圈
-            var ringText = item.isAvailable ? (item.extensionTube + ' mm') : '--';
-
-            // 视野
-            var fovDisplay;
-            if (mode === 'wd') {
-                var dispW = _displayFovW || 0;
-                var dispH = _displayFovH || 0;
-                fovDisplay = (dispW > 0 && dispH > 0) ? (dispW.toFixed(1) + '×' + dispH.toFixed(1) + ' mm') : '--';
-            } else {
-                if (item.isAvailable && !isNaN(item.resultW) && isFinite(item.resultW)) {
-                    var w = item.resultW.toFixed(1);
-                    var h = (!isNaN(item.resultH) && isFinite(item.resultH)) ? item.resultH.toFixed(1) : '--';
-                    fovDisplay = w + '×' + h + ' mm';
+                if (mode === 'wd') {
+                    statusClass = item.isAvailable ? 'ok' : 'unavailable';
+                    wdDisplay = item.isAvailable ? fixedWDDisplay : '不合适';
+                    ringText = '0 mm';
+                    fovDisplay = item.isAvailable ? (actualFovWDisplay + '×' + actualFovHDisplay) : '--';
+                    wdValue = item.isAvailable ? item.fixedWD.toFixed(2) : '';
                 } else {
-                    fovDisplay = '不合适';
+                    statusClass = item.isAvailable ? 'ok' : 'unavailable';
+                    wdDisplay = fixedWDDisplay;
+                    ringText = '0 mm';
+                    fovDisplay = item.isAvailable ? (actualFovWDisplay + '×' + actualFovHDisplay) : '不合适';
+                    wdValue = item.fixedWD.toFixed(2);
                 }
+
+                // ---- 修改：名称只显示型号（不拼接倍率），倍率放在详情行 ----
+                var cardClass = item.isAvailable ? 'lens-card' : 'lens-card unavailable-card';
+                html += '<div class="' + cardClass + '" data-model="' + item.model + '" data-fovw="" data-fovh="" data-thread="' + (item.thread || '') + '" data-wd="' + wdValue + '">' +
+                    '<div class="lens-name" title="' + item.model + '">' + label + '</div>' +
+                    '<div class="lens-detail">' +
+                    '<div class="row"><span class="label">放大倍率</span><span class="value" style="color:#cc6600;">' + magDisplay + '</span></div>' +
+                    '<div class="row"><span class="label">距离</span><span class="value ' + statusClass + '">' + wdDisplay + '</span></div>' +
+                    '<div class="row"><span class="label">接圈</span><span class="value ring">' + ringText + '</span></div>' +
+                    '<div class="row"><span class="label">视野</span><span class="value">' + fovDisplay + '</span></div>' +
+                    '</div>' +
+                    '</div>';
+            } else {
+                // 普通镜头（原逻辑）
+                var userFovW = parseFloat(lineFovW ? lineFovW.value : 0);
+                var userFovH = parseFloat(lineFovH ? lineFovH.value : 0);
+                var userDist = parseFloat(lineDistCam ? lineDistCam.value : 0);
+
+                if (mode === 'wd') {
+                    wdDisplay = (item.isAvailable && !isNaN(item.resultW) && isFinite(item.resultW)) ?
+                        item.resultW.toFixed(1) + ' mm' : '不合适';
+                    wdValue = (item.isAvailable && !isNaN(item.resultW) && isFinite(item.resultW)) ? item.resultW.toFixed(2) : '';
+                } else {
+                    wdDisplay = (userDist > 0) ? userDist.toFixed(1) + ' mm' : '--';
+                    wdValue = (userDist > 0) ? userDist.toFixed(2) : '';
+                }
+
+                ringText = item.isAvailable ? (item.extensionTube + ' mm') : '--';
+
+                if (mode === 'wd') {
+                    var dispW = _displayFovW || 0;
+                    var dispH = _displayFovH || 0;
+                    fovDisplay = (dispW > 0 && dispH > 0) ? (dispW.toFixed(1) + '×' + dispH.toFixed(1) + ' mm') : '--';
+                } else {
+                    if (item.isAvailable && !isNaN(item.resultW) && isFinite(item.resultW)) {
+                        var w = item.resultW.toFixed(1);
+                        var h = (!isNaN(item.resultH) && isFinite(item.resultH)) ? item.resultH.toFixed(1) : '--';
+                        fovDisplay = w + '×' + h + ' mm';
+                    } else {
+                        fovDisplay = '不合适';
+                    }
+                }
+
+                var fovAttrW = (mode === 'fov' && item.isAvailable && typeof item.resultW === 'number' && isFinite(item.resultW)) ? item.resultW.toFixed(2) : '';
+                var fovAttrH = (mode === 'fov' && item.isAvailable && typeof item.resultH === 'number' && isFinite(item.resultH)) ? item.resultH.toFixed(2) : '';
+
+                statusClass = item.isAvailable ? 'ok' : 'unavailable';
+                var cardClass = item.isAvailable ? 'lens-card' : 'lens-card unavailable-card';
+
+                html += '<div class="' + cardClass + '" data-model="' + item.model + '" data-fovw="' + fovAttrW + '" data-fovh="' + fovAttrH + '" data-thread="' + (item.thread || '') + '" data-wd="' + wdValue + '">' +
+                    '<div class="lens-name" title="' + item.model + '">' + label + '</div>' +
+                    '<div class="lens-detail">' +
+                    '<div class="row"><span class="label">距离</span><span class="value ' + statusClass + '">' + wdDisplay + '</span></div>' +
+                    '<div class="row"><span class="label">接圈</span><span class="value ring">' + ringText + '</span></div>' +
+                    '<div class="row"><span class="label">视野</span><span class="value">' + fovDisplay + '</span></div>' +
+                    '</div>' +
+                    '</div>';
             }
-
-            var fovAttrW = (mode === 'fov' && item.isAvailable && typeof item.resultW === 'number' && isFinite(item.resultW)) ? item.resultW.toFixed(2) : '';
-            var fovAttrH = (mode === 'fov' && item.isAvailable && typeof item.resultH === 'number' && isFinite(item.resultH)) ? item.resultH.toFixed(2) : '';
-
-            var statusClass = item.isAvailable ? 'ok' : 'unavailable';
-            var cardClass = 'lens-card' + (item.isAvailable ? '' : ' unavailable-card');
-
-            html += '<div class="' + cardClass + '" data-model="' + item.model + '" data-fovw="' + fovAttrW + '" data-fovh="' + fovAttrH + '" data-thread="' + (item.thread || '') + '" data-wd="' + wdValue + '">' +
-                '<div class="lens-name" title="' + item.model + '">' + label + '</div>' +
-                '<div class="lens-detail">' +
-                '<div class="row"><span class="label">距离</span><span class="value ' + statusClass + '">' + wdDisplay + '</span></div>' +
-                '<div class="row"><span class="label">接圈</span><span class="value ring">' + ringText + '</span></div>' +
-                '<div class="row"><span class="label">视野</span><span class="value">' + fovDisplay + '</span></div>' +
-                '</div>' +
-                '</div>';
         });
 
         html += '</div></div>';
@@ -407,9 +580,9 @@
 
         if (lineResSize) {
             if (fovW > 0 && fovH > 0) {
-                lineResSize.textContent = fovW.toFixed(2) + ' × ' + fovH.toFixed(2) + ' mm';
+                lineResSize.textContent = fovW.toFixed(1) + ' × ' + fovH.toFixed(1) + ' mm';
             } else if (fovW > 0) {
-                lineResSize.textContent = fovW.toFixed(2) + ' mm';
+                lineResSize.textContent = fovW.toFixed(1) + ' mm';
             } else {
                 lineResSize.textContent = '--';
             }
@@ -622,10 +795,11 @@
 
         // 决定模式：有视野 => wd，否则 => fov
         var mode = hasFov ? 'wd' : 'fov';
-        _calcMode = mode;   // <--- 添加这一行，更新全局模式
+        _calcMode = mode; // <--- 添加这一行，更新全局模式
 
         // 3. 获取CMOS尺寸
-        var cmosW = 0, cmosH = 0;
+        var cmosW = 0,
+            cmosH = 0;
         if (_selectedCameraRow) {
             var colMap = getCameraColumnMap();
             var senWKey = colMap.senW || '传感器长边';
@@ -761,7 +935,6 @@
         }
 
         // 7. 靶面匹配
-        checkTargetSurfaceMatch(results);
         _lastResults = results;
     }
 
@@ -810,7 +983,6 @@
         // 重置显示框
         document.getElementById('selectedLensDisplay').textContent = '点击镜头卡片选择';
 
-
         console.log('🔄 镜头选型器已重置');
     }
 
@@ -841,19 +1013,44 @@
         var focalKey = colMap.focal || '焦距';
 
         // 按系列分组
-        var groups = {};
+        var groups = {};       // 系列 -> 镜头行数组
+        var seriesTargetMap = {}; // 系列 -> 靶面数值
+
         lensData.forEach(function (row) {
             var model = row[nameKey] || '';
             var series = extractSeries(model);
             if (!groups[series]) groups[series] = [];
             groups[series].push(row);
+            // 记录靶面（取第一个有效值）
+            if (!seriesTargetMap[series]) {
+                var rawTarget = row[targetKey] || '';
+                if (rawTarget) {
+                    var parsed = parseSurfaceSize(rawTarget);
+                    if (!isNaN(parsed) && parsed > 0) {
+                        seriesTargetMap[series] = parsed;
+                    }
+                }
+            }
         });
 
-        var seriesKeys = Object.keys(groups);
-        var organized = organizeSeries(seriesKeys);
+        // 获取相机靶面
+        var cameraTarget = getCameraTargetSize();
+
+        // 过滤系列：如果相机靶面存在，则只保留靶面 >= 相机靶面的系列
+        var filteredSeriesKeys = Object.keys(groups).filter(function (series) {
+            if (cameraTarget === null) return true; // 未选相机则全部显示
+            var lensTarget = seriesTargetMap[series];
+            return lensTarget && lensTarget >= cameraTarget;
+        });
+
+        var organized = organizeSeries(filteredSeriesKeys, null);   // 不传靶面映射，使用交替分配
         var leftSeries = organized.left;
         var rightSeries = organized.right;
+        applyStoredOrder(leftSeries, 'left');
+        applyStoredOrder(rightSeries, 'right');
+
         var totalCount = 0;
+
 
         // 渲染左列
         leftSeries.forEach(function (series) {
@@ -875,11 +1072,15 @@
 
         // 靶面匹配（清空警告，因为还没计算）
         clearTargetWarnings();
+
+        setTimeout(initSortableForColumns, 0);
+
+        // 恢复折叠状态
+        restoreCollapseState();
     }
 
     // 辅助函数：生成静态系列组的HTML
     function createSeriesGroupHtml(series, items, nameKey, targetKey, focalKey) {
-        // 获取该系列第一支镜头的靶面
         var seriesTarget = '';
         for (var i = 0; i < items.length; i++) {
             if (items[i][targetKey]) {
@@ -889,21 +1090,45 @@
         }
         var badgeCount = items.length;
         var html = '<div class="lens-series-group" data-series="' + series + '">';
-        // 标题中显示靶面（不带"靶面"二字，前面加空格）
         html += '<div class="lens-series-header"><span>🔹 ' + series + ' 系列' + (seriesTarget ? ' ' + seriesTarget : '') + '</span><span class="badge">' + badgeCount + '</span></div>';
         html += '<div class="lens-series-body" style="display:flex; flex-wrap:wrap; gap:10px; padding:10px 12px;">';
+
+        // 获取列映射中的远心字段
+        var colMap = getLensColumnMap();
+        var lensTypeKey = colMap.lensType || '镜头类型';
+        var magKey = colMap.magnification || '放大倍率';
+        var fixedWDKey = colMap.fixedWD || '固定工作距离';
+
         items.forEach(function (row) {
             var name = row[nameKey] || '--';
             var focal = row[focalKey] || '--';
             var target = row[targetKey] || '--';
+            var lensType = (row[lensTypeKey] || '').toString().trim();
+            var isTelecentric = (lensType === '远心' || lensType === 'telecentric' || lensType === 'Telecentric');
+            var mag = parseFloat(row[magKey]) || 0;
+            var fixedWD = parseFloat(row[fixedWDKey]) || 0;
+
+            // ---- 修改：名称只显示型号，不再拼接额外信息 ----
+            var extraInfo = '';
+            var detailRows = '<div class="row"><span class="label">焦距</span><span class="value">' + focal + 'mm</span></div>' +
+                '<div class="row"><span class="label">靶面</span><span class="value">' + target + '</span></div>';
+
+            // 如果是远心镜头，在详情中增加放大倍率和固定WD
+            if (isTelecentric && mag > 0) {
+                var magDisplay = mag.toFixed(2) + 'x';
+                var wdDisplay = fixedWD > 0 ? fixedWD.toFixed(1) + ' mm' : '--';
+                detailRows += '<div class="row"><span class="label">放大倍率</span><span class="value" style="color:#cc6600;">' + magDisplay + '</span></div>' +
+                    '<div class="row"><span class="label">固定WD</span><span class="value" style="color:#0066cc;">' + wdDisplay + '</span></div>';
+            }
+
             html += '<div class="lens-card" data-model="' + name + '">' +
-                '<div class="lens-name" title="' + name + '">' + name + '</div>' +
+                '<div class="lens-name" title="' + name + '">' + name + extraInfo + '</div>' +
                 '<div class="lens-detail">' +
-                '<div class="row"><span class="label">焦距</span><span class="value">' + focal + 'mm</span></div>' +
-                '<div class="row"><span class="label">靶面</span><span class="value">' + target + '</span></div>' +
+                detailRows +
                 '</div>' +
                 '</div>';
         });
+
         html += '</div></div>';
         return html;
     }
@@ -958,59 +1183,66 @@
     }
 
     /**
- * 组织系列到左右列
- * 固定系列：左列 YB, TB, ZB, M；右列 YD, TE, ZD, ZM
- * 其他系列按字母序交替分配到左右列
- * @param {Array} seriesKeys - 所有系列名称列表
- * @returns {Object} { left: [], right: [] }
- */
-    function organizeSeries(seriesKeys) {
-        var FIXED_LEFT = ['YB', 'TB', 'ZB', 'M'];
-        var FIXED_RIGHT = ['YD', 'TE', 'ZD', 'ZM'];
+     * 组织系列到左右列
+     * 固定系列：左列 YB, TB, ZB, M；右列 YD, TE, ZD, ZM
+     * 其他系列按字母序交替分配到左右列
+     * @param {Array} seriesKeys - 所有系列名称列表
+     * @returns {Object} { left: [], right: [] }
+     */
+    function organizeSeries(seriesKeys, targetMap) {
+        // 强制右列系列（不受影响）
+        var FORCE_RIGHT = ['M'];
+        var FORCE_LEFT = [];
 
+        // 如果传入了靶面映射，按靶面大小分（保留原逻辑，但通常我们不再使用）
+        if (targetMap && Object.keys(targetMap).length > 0) {
+            var left = [], right = [];
+            seriesKeys.forEach(function (key) {
+                if (FORCE_RIGHT.indexOf(key) !== -1) { right.push(key); return; }
+                if (FORCE_LEFT.indexOf(key) !== -1) { left.push(key); return; }
+                var target = targetMap[key];
+                if (target !== undefined && target < 1) {
+                    left.push(key);
+                } else {
+                    right.push(key);
+                }
+            });
+            left.sort();
+            right.sort();
+            return { left: left, right: right };
+        }
+
+        // ---- 无靶面映射时：交替分配，保证左右均衡 ----
+        var all = seriesKeys.slice().sort();
         var fixedLeft = [];
         var fixedRight = [];
         var others = [];
-
-        seriesKeys.forEach(function (key) {
-            if (FIXED_LEFT.indexOf(key) !== -1) {
-                fixedLeft.push(key);
-            } else if (FIXED_RIGHT.indexOf(key) !== -1) {
-                fixedRight.push(key);
-            } else {
-                others.push(key);
-            }
+        all.forEach(function (key) {
+            if (FORCE_LEFT.indexOf(key) !== -1) fixedLeft.push(key);
+            else if (FORCE_RIGHT.indexOf(key) !== -1) fixedRight.push(key);
+            else others.push(key);
         });
 
-        // 按固定顺序排序固定系列（保持原顺序）
-        fixedLeft.sort(function (a, b) {
-            return FIXED_LEFT.indexOf(a) - FIXED_LEFT.indexOf(b);
-        });
-        fixedRight.sort(function (a, b) {
-            return FIXED_RIGHT.indexOf(a) - FIXED_RIGHT.indexOf(b);
-        });
-
-        // 其他系列按字母序排序
-        others.sort(function (a, b) {
-            return a.localeCompare(b);
-        });
-
-        // 交替分配其他系列到左右列，从左列开始
         var left = fixedLeft.slice();
         var right = fixedRight.slice();
         var toLeft = true;
         others.forEach(function (key) {
-            if (toLeft) {
-                left.push(key);
-            } else {
-                right.push(key);
-            }
+            if (toLeft) left.push(key);
+            else right.push(key);
             toLeft = !toLeft;
         });
 
+        // 平衡左右数量（如果悬殊太大，匀一下）
+        while (left.length > right.length + 1) {
+            right.push(left.pop());
+        }
+        while (right.length > left.length + 1) {
+            left.push(right.pop());
+        }
+        left.sort();
+        right.sort();
         return { left: left, right: right };
     }
-
     // ============================================================
     //  10. 相机型号搜索选择器 (复用面阵计算器的数据)
     // ============================================================
@@ -1122,6 +1354,52 @@
             } catch (e) { }
         }
     }
+    function initSortableForColumns() {
+        var leftCol = document.getElementById('colLeft');
+        var rightCol = document.getElementById('colRight');
+        if (!leftCol || !rightCol) return;
+
+        // 销毁旧实例（如果有）
+        if (window._sortableLeft) { window._sortableLeft.destroy(); window._sortableLeft = null; }
+        if (window._sortableRight) { window._sortableRight.destroy(); window._sortableRight = null; }
+
+        // 左列拖拽
+        window._sortableLeft = new Sortable(leftCol, {
+            animation: 150,
+            handle: '.lens-series-header',      // 仅标题可拖动
+            direction: 'vertical',
+            group: 'left-column',               // 限制在同一列内
+            onEnd: function () {
+                var items = leftCol.querySelectorAll('.lens-series-group');
+                var order = [];
+                items.forEach(function (el) {
+                    var series = el.dataset.series;
+                    if (series) order.push(series);
+                });
+                var rightOrder = getStoredOrder().right || [];
+                saveStoredOrder(order, rightOrder);
+            }
+        });
+
+        // 右列拖拽
+        window._sortableRight = new Sortable(rightCol, {
+            animation: 150,
+            handle: '.lens-series-header',
+            direction: 'vertical',
+            group: 'right-column',
+            onEnd: function () {
+                var items = rightCol.querySelectorAll('.lens-series-group');
+                var order = [];
+                items.forEach(function (el) {
+                    var series = el.dataset.series;
+                    if (series) order.push(series);
+                });
+                var leftOrder = getStoredOrder().left || [];
+                saveStoredOrder(leftOrder, order);
+            }
+        });
+    }
+
 
     // ----- 应用相机数据到输入 -----
     function applyCameraToLineInputs(row) {
@@ -1141,7 +1419,6 @@
         _cameraResW = parseFloat(resW) || 0;
         _cameraResH = parseFloat(resH) || 0;
 
-
         // 获取靶面 - 优先使用列映射中的 target
         var targetKey = colMap.target || colMap.TargetSurface || '靶面';
         _cameraTargetSurface = row[targetKey] || null;
@@ -1156,8 +1433,59 @@
                 }
             }
         }
-
+        // 最后刷新镜头列表（仅显示靶面匹配的系列）
+        renderLensList(getLensData());
+        syncCameraToArea(row);
     }
+
+    //镜头模块和光源同步相机函数
+    function syncCameraToArea(row) {
+        if (!row) return;
+        var areaSearch = document.getElementById('common-modelSelectSearch');
+        var areaHidden = document.getElementById('common-modelSelect');
+        if (areaSearch && areaHidden) {
+            var colMap = getCameraColumnMap();
+            var nameKey = colMap.name || '型号';
+            var displayName = row[nameKey] || '';
+            if (displayName) {
+                areaSearch.value = displayName;
+                areaSearch.dataset.row = JSON.stringify(row);
+                areaHidden.value = JSON.stringify(row);
+                // 触发 change 事件，让面阵模块响应
+                var evt = new Event('change', { bubbles: true });
+                areaHidden.dispatchEvent(evt);
+                // 也触发 input 事件更新下拉列表（可选）
+                var inputEvt = new Event('input', { bubbles: true });
+                areaSearch.dispatchEvent(inputEvt);
+            }
+        }
+    }
+
+
+    // 同步镜头到面阵模块
+    function syncLensToArea(row) {
+        if (!row) return;
+        var areaSearch = document.getElementById('common-lensSearch');
+        var areaHidden = document.getElementById('common-lensSelect');
+        if (areaSearch && areaHidden) {
+            var colMap = getLensColumnMap();
+            var nameKey = colMap.name || '镜头型号';
+            var displayName = row[nameKey] || '';
+            if (displayName) {
+                areaSearch.value = displayName;
+                areaSearch.dataset.row = JSON.stringify(row);
+                areaHidden.value = JSON.stringify(row);
+                // 触发 change 事件，让面阵模块响应
+                var evt = new Event('change', { bubbles: true });
+                areaHidden.dispatchEvent(evt);
+                // 也触发 input 事件更新下拉列表（可选）
+                var inputEvt = new Event('input', { bubbles: true });
+                areaSearch.dispatchEvent(inputEvt);
+            }
+        }
+    }
+
+
 
     // ============================================================
     //  11. 数据更新回调
@@ -1178,9 +1506,8 @@
         // 如果有上次的计算结果，重新应用
         if (_lastResults) {
             updateResultsUI(_lastResults, _calcMode);
-            checkTargetSurfaceMatch(_lastResults);
+            // checkTargetSurfaceMatch(_lastResults);  // 删除这行
         }
-
 
         document.getElementById('selectedLensDisplay').textContent = '点击镜头卡片选择';
         document.getElementById('lineResThread').textContent = '--';
@@ -1188,8 +1515,6 @@
         document.querySelectorAll('.lens-card.selected').forEach(function (c) {
             c.classList.remove('selected');
         });
-
-
     }
 
     // ============================================================
@@ -1204,36 +1529,32 @@
                 var areaWrap = document.getElementById('areaWrap');
                 var lineWrap = document.getElementById('lineSelectorWrap');
 
-                // 根据点击的按钮控制显示
-                if (areaWrap) areaWrap.style.display = isLine ? 'none' : 'flex';
-                if (lineWrap) lineWrap.style.display = isLine ? 'block' : 'none';
+                // 用类控制显示隐藏
+                if (areaWrap) {
+                    areaWrap.classList.toggle('hidden-panel', isLine);
+                    // 当 isLine=true 时添加 hidden-panel，false 时移除
+                }
+                if (lineWrap) {
+                    lineWrap.classList.toggle('hidden-panel', !isLine);
+                    // 当 isLine=false 时添加 hidden-panel（即面阵模式隐藏 lineWrap）
+                }
 
                 btns.forEach(function (b) { b.classList.remove('active'); });
                 this.classList.add('active');
-
-                if (isLine) {
-                    setTimeout(function () {
-                        onDataUpdated();
-                        initLineSearchSelect();
-                    }, 100);
-                }
             });
         });
 
-        // 默认状态：根据 active 按钮初始化
+        // 初始化：根据 active 按钮设置状态
         var activeBtn = document.querySelector('.tool-toggle-btn.active');
-        if (activeBtn) {
-            var isLine = (activeBtn.dataset.tool === 'line');
-            var areaWrap = document.getElementById('areaWrap');
-            var lineWrap = document.getElementById('lineSelectorWrap');
-            if (areaWrap) areaWrap.style.display = isLine ? 'none' : 'flex';
-            if (lineWrap) lineWrap.style.display = isLine ? 'block' : 'none';
-        } else {
-            // 默认显示镜头选型器
-            var areaWrap = document.getElementById('areaWrap');
-            var lineWrap = document.getElementById('lineSelectorWrap');
-            if (areaWrap) areaWrap.style.display = 'none';
-            if (lineWrap) lineWrap.style.display = 'block';
+        var isLine = (activeBtn && activeBtn.dataset.tool === 'line') || true; // 默认 line
+        var areaWrap = document.getElementById('areaWrap');
+        var lineWrap = document.getElementById('lineSelectorWrap');
+
+        if (areaWrap) {
+            areaWrap.classList.toggle('hidden-panel', isLine);
+        }
+        if (lineWrap) {
+            lineWrap.classList.toggle('hidden-panel', !isLine);
         }
     }
 
@@ -1278,14 +1599,328 @@
     // ============================================================
     //  14.5 相机型号标签点击 → 弹出相机列表
     // ============================================================
+    // ============================================================
+    //  相机型号标签点击 → 弹出相机列表（CG / CR 双列）
+    // ============================================================
+    // ============================================================
+    //  辅助函数：相机列表分组 (CG / CR / 其他)
+    // ============================================================
+    // ============================================================
+    //  辅助函数：相机列表分组 (CG / CR / 其他)
+    // ============================================================
+    function groupCameraItems(items) {
+        var colMap = getCameraColumnMap();
+        var nameKey = colMap.name || '型号';
+        var typeKey = colMap.type || colMap.series || colMap.类型 || '类型';
+
+        var cgItems = [];
+        var crItems = [];
+        var otherItems = [];
+
+        items.forEach(function (item) {
+            var row = item.row;
+            var name = (row[nameKey] || '').toUpperCase();
+            var type = (row[typeKey] || '').toUpperCase();
+
+            var isCG = (type === 'CG' || type.indexOf('CG') !== -1 || name.indexOf('CG') !== -1 || name.startsWith('CG'));
+            var isCR = (type === 'CR' || type.indexOf('CR') !== -1 || name.indexOf('CR') !== -1 || name.startsWith('CR'));
+
+            if (isCG) { cgItems.push(item); }
+            else if (isCR) { crItems.push(item); }
+            else { otherItems.push(item); }
+        });
+
+        if (cgItems.length === 0 && crItems.length === 0 && otherItems.length > 0) {
+            cgItems = [];
+            crItems = [];
+            otherItems = [];
+            items.forEach(function (item) {
+                var name = (item.row[nameKey] || '').toUpperCase();
+                if (name.indexOf('CG') !== -1 || name.startsWith('CG')) { cgItems.push(item); }
+                else if (name.indexOf('CR') !== -1 || name.startsWith('CR')) { crItems.push(item); }
+                else { otherItems.push(item); }
+            });
+        }
+
+        if (cgItems.length === 0 && crItems.length === 0) {
+            otherItems = items;
+        }
+
+        return { cgItems: cgItems, crItems: crItems, otherItems: otherItems };
+    }
+
+    // ============================================================
+    //  辅助函数：创建相机列表表格（含分辨率列 + 高亮对比）
+    // ============================================================
+    function createCameraTable(title, itemsData, color, icon, onSelectCallback) {
+        var colMap = getCameraColumnMap();
+        var nameKey = colMap.name || '型号';
+        var senWKey = colMap.senW || '传感器长边';
+        var senHKey = colMap.senH || '传感器短边';
+        var resWKey = colMap.resW || '分辨率长边';
+        var resHKey = colMap.resH || '分辨率短边';
+        var targetKey = colMap.target || '靶面';
+
+        var col = document.createElement('div');
+        col.style.cssText = 'flex: 1; min-width: 200px; display: flex; flex-direction: column;';
+
+        var titleEl = document.createElement('h4');
+        titleEl.style.cssText =
+            'text-align: center; color: ' + color +
+            '; margin: 0 0 10px 0; font-size: 16px; border-bottom: 2px solid ' + color +
+            '30; padding-bottom: 6px; font-weight: 600;';
+        titleEl.textContent = (icon || '📷') + ' ' + title + ' (' + itemsData.length + ')';
+        col.appendChild(titleEl);
+
+        var tableWrap = document.createElement('div');
+        tableWrap.style.cssText = 'flex: 1; overflow-y: auto; max-height: 420px;';
+
+        var table = document.createElement('table');
+        table.style.cssText = 'width:100%; border-collapse:collapse; font-size:14px;';
+
+        // 表头
+        var thead = document.createElement('thead');
+        thead.innerHTML =
+            '<tr style="background:#f0f4ff; border-bottom:2px solid #e8eaed; position:sticky; top:0; z-index:2;">' +
+            '<th style="padding:7px 10px; text-align:left; font-size:13px;">型号</th>' +
+            '<th style="padding:7px 10px; text-align:left; font-size:13px;">传感器</th>' +
+            '<th style="padding:7px 10px; text-align:left; font-size:13px;">分辨率</th>' +
+            '<th style="padding:7px 10px; text-align:left; font-size:13px;">靶面</th>' +
+            '</tr>';
+        table.appendChild(thead);
+
+        var tbody = document.createElement('tbody');
+        var allRows = [];
+
+        itemsData.forEach(function (item) {
+            var row = item.row;
+            var name = row[nameKey] || '--';
+            var senW = row[senWKey] || '--';
+            var senH = row[senHKey] || '--';
+            var resW = parseFloat(row[resWKey]) || 0;
+            var resH = parseFloat(row[resHKey]) || 0;
+            var target = row[targetKey] || '--';
+            var resDisplay = (resW > 0 && resH > 0) ? resW + '×' + resH : '--';
+
+            var tr = document.createElement('tr');
+            tr.style.cssText =
+                'cursor: pointer; border-bottom: 1px solid #f0f2f5; transition: background 0.2s;';
+            tr._resW = resW; // 保存分辨率长边用于对比
+            tr._resH = resH;
+
+            tr.addEventListener('mouseenter', function () {
+                if (!this._highlighted) this.style.background = '#f5f8ff';
+            });
+            tr.addEventListener('mouseleave', function () {
+                if (!this._highlighted) this.style.background = '';
+            });
+            tr.addEventListener('click', function () {
+                if (typeof onSelectCallback === 'function') {
+                    onSelectCallback(row, name);
+                }
+            });
+
+            tr.innerHTML =
+                '<td style="padding:7px 10px; font-weight:500;">' + name + '</td>' +
+                '<td style="padding:7px 10px;">' + senW + '×' + senH + '</td>' +
+                '<td style="padding:7px 10px;">' + resDisplay + '</td>' +
+                '<td style="padding:7px 10px;">' + target + '</td>';
+            tbody.appendChild(tr);
+            allRows.push(tr);
+        });
+
+        table.appendChild(tbody);
+        tableWrap.appendChild(table);
+        col.appendChild(tableWrap);
+
+        // ---- 高亮更新方法 ----
+        function updateHighlight(requiredPixels) {
+            var hasResult = (requiredPixels !== null && requiredPixels > 0);
+            allRows.forEach(function (tr) {
+                var resW = tr._resW || 0;
+                if (hasResult && resW > 0 && resW >= requiredPixels) {
+                    tr.style.background = '#e6ffe6'; // 淡绿色
+                    tr._highlighted = true;
+                } else {
+                    tr.style.background = '';         // 不可用或无结果，保持默认
+                    tr._highlighted = false;
+                }
+            });
+        }
+
+        // 返回 { element, updateHighlight, allRows }
+        return {
+            element: col,
+            updateHighlight: updateHighlight,
+            allRows: allRows
+        };
+    }
+
+    // ============================================================
+    //  辅助函数：构建弹窗工具栏（视野 + 精度计算 + 对比触发）
+    // ============================================================
+    function buildPrecisionToolbar(mainFovInput, onResult) {
+        var toolbar = document.createElement('div');
+        toolbar.style.cssText =
+            'display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: center; ' +
+            'padding: 8px 0 14px 0; margin-bottom: 6px; border-bottom: 1px solid #eef0f4; flex-shrink: 0;';
+
+        // 视野长边
+        var fovLabel = document.createElement('span');
+        fovLabel.textContent = '📐 视野长边';
+        fovLabel.style.fontWeight = '500';
+        toolbar.appendChild(fovLabel);
+
+        var tbFovInput = document.createElement('input');
+        tbFovInput.type = 'number';
+        tbFovInput.step = 'any';
+        tbFovInput.placeholder = 'mm';
+        tbFovInput.style.cssText = 'width: 90px; padding: 6px 8px; border: 1px solid #d9dde3; border-radius: 6px; font-size: 14px;';
+        if (mainFovInput) tbFovInput.value = mainFovInput.value || '';
+        toolbar.appendChild(tbFovInput);
+
+        // 理想精度
+        var precLabel = document.createElement('span');
+        precLabel.textContent = '🎯 理想精度 (mm/px)';
+        precLabel.style.fontWeight = '500';
+        toolbar.appendChild(precLabel);
+
+        var tbPrecInput = document.createElement('input');
+        tbPrecInput.type = 'number';
+        tbPrecInput.step = 'any';
+        tbPrecInput.min = '0.0001';
+        tbPrecInput.placeholder = '例 0.02';
+        tbPrecInput.style.cssText = 'width: 100px; padding: 6px 8px; border: 1px solid #d9dde3; border-radius: 6px; font-size: 14px;';
+        toolbar.appendChild(tbPrecInput);
+
+        // 计算按钮
+        var calcBtn = document.createElement('button');
+        calcBtn.textContent = '🧮 计算';
+        calcBtn.style.cssText =
+            'padding: 6px 16px; background: #4080ff; color: #fff; border: none; border-radius: 6px; ' +
+            'cursor: pointer; font-weight: 500; font-size: 14px; transition: 0.2s;';
+        calcBtn.onmouseover = function () { this.style.background = '#3060dd'; };
+        calcBtn.onmouseout = function () { this.style.background = '#4080ff'; };
+        toolbar.appendChild(calcBtn);
+
+        // 结果区
+        var tbResult = document.createElement('span');
+        tbResult.style.cssText =
+            'font-weight: 600; color: #1d2129; background: #f0f7ff; padding: 4px 14px; ' +
+            'border-radius: 6px; min-width: 120px; text-align: center; font-size: 14px;';
+        tbResult.textContent = '等待计算';
+        toolbar.appendChild(tbResult);
+
+        // 当前计算结果（像素）
+        var lastResultPixels = null;
+
+        // ----- 双向同步逻辑 -----
+        var isSyncing = false;
+
+        function syncToMain() {
+            if (isSyncing) return;
+            isSyncing = true;
+            if (mainFovInput) {
+                mainFovInput.value = tbFovInput.value;
+                mainFovInput.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            isSyncing = false;
+        }
+
+        function syncToPopup() {
+            if (isSyncing) return;
+            isSyncing = true;
+            if (tbFovInput) {
+                tbFovInput.value = mainFovInput.value;
+            }
+            isSyncing = false;
+        }
+
+        tbFovInput.addEventListener('input', syncToMain);
+        if (mainFovInput) {
+            mainFovInput.removeEventListener('input', syncToPopup);
+            mainFovInput.addEventListener('input', syncToPopup);
+        }
+
+        // ----- 计算事件（带结果回调） -----
+        function doPrecisionCalc() {
+            var fov = parseFloat(tbFovInput.value);
+            var prec = parseFloat(tbPrecInput.value);
+            if (isNaN(fov) || fov <= 0) {
+                tbResult.textContent = '⚠️ 无效视野';
+                tbResult.style.color = '#cc0000';
+                lastResultPixels = null;
+                if (typeof onResult === 'function') onResult(null);
+                return;
+            }
+            if (isNaN(prec) || prec <= 0) {
+                tbResult.textContent = '⚠️ 输入精度';
+                tbResult.style.color = '#cc0000';
+                lastResultPixels = null;
+                if (typeof onResult === 'function') onResult(null);
+                return;
+            }
+            var pixels = Math.ceil(fov / prec);
+            lastResultPixels = pixels;
+            tbResult.textContent = '所需分辨率: ' + pixels.toLocaleString() + ' px';
+            tbResult.style.color = '#0066cc';
+            // 触发回调，传入计算结果
+            if (typeof onResult === 'function') onResult(pixels);
+        }
+
+        calcBtn.addEventListener('click', doPrecisionCalc);
+        tbPrecInput.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') calcBtn.click();
+        });
+
+        // 返回工具栏DOM + 清理函数 + 获取结果方法
+        var cleanup = function () {
+            if (mainFovInput) {
+                mainFovInput.removeEventListener('input', syncToPopup);
+            }
+        };
+
+        return {
+            element: toolbar,
+            cleanup: cleanup,
+            getResult: function () { return lastResultPixels; },
+            doCalc: doPrecisionCalc
+        };
+    }
+
+    // ============================================================
+    //  主函数：绑定相机型号标签点击 → 弹出相机列表
+    // ============================================================
     function bindCameraLabelClick() {
         var modelLabel = document.querySelector('.input-area .form-item:first-child label');
         if (!modelLabel) return;
 
         modelLabel.style.cursor = 'pointer';
         modelLabel.title = '点击查看所有相机列表';
+
+        // 为了不影响布局，使用 inline-block + fit-content
+        modelLabel.style.display = 'inline-block';
+        modelLabel.style.padding = '2px 12px';
+        modelLabel.style.margin = '-2px -12px 2px -12px'; // 补偿 padding，保持原有位置不偏移
+        modelLabel.style.borderRadius = '14px';          // 圆角“药丸”效果
+        modelLabel.style.background = '#f0f4ff';          // 极浅的蓝色背景
+        modelLabel.style.border = '1px solid #e0e6f0';    // 浅灰色边框
+        modelLabel.style.transition = 'all 0.2s ease';    // 平滑过渡
+
+        // 悬停效果（明显但不突兀）
+        modelLabel.addEventListener('mouseenter', function () {
+            this.style.background = '#dce6ff';
+            this.style.borderColor = '#4080ff';
+            this.style.boxShadow = '0 2px 6px rgba(64, 128, 255, 0.12)';
+        });
+        modelLabel.addEventListener('mouseleave', function () {
+            this.style.background = '#f0f4ff';
+            this.style.borderColor = '#e0e6f0';
+            this.style.boxShadow = 'none';
+        });
+
         modelLabel.addEventListener('click', function () {
-            // 获取所有相机数据（去重）
+            // 1. 获取数据
             var items = [];
             if (window.areaDataManager && window.areaDataManager.isLoaded) {
                 items = window.areaDataManager.getCameraItems();
@@ -1295,160 +1930,163 @@
                 return;
             }
 
-            // 构建模态框
+            // 2. 分组
+            var groups = groupCameraItems(items);
+
+            // 3. 构建模态框
             var overlay = document.createElement('div');
-            overlay.style.cssText = `
-                position: fixed;
-                top: 0; left: 0;
-                width: 100%; height: 100%;
-                background: rgba(0,0,0,0.5);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                z-index: 9999;
-                backdrop-filter: blur(2px);
-            `;
+            overlay.style.cssText =
+                'position: fixed; top: 0; left: 0; width: 100%; height: 100%; ' +
+                'background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; ' +
+                'z-index: 9999; backdrop-filter: blur(2px);';
+
             var modal = document.createElement('div');
-            modal.style.cssText = `
-                background: #fff;
-                border-radius: 16px;
-                max-width: 780px;
-                width: 90%;
-                max-height: 80vh;
-                padding: 24px 28px;
-                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-                display: flex;
-                flex-direction: column;
-                overflow: hidden;
-            `;
+            modal.style.cssText =
+                'background: #fff; border-radius: 16px; max-width: 960px; width: 92%; ' +
+                'max-height: 85vh; padding: 20px 24px 24px 24px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); ' +
+                'display: flex; flex-direction: column; overflow: hidden;';
+
+            // 4. 标题栏
             var header = document.createElement('div');
-            header.style.cssText = `
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                margin-bottom: 16px;
-                flex-shrink: 0;
-            `;
-            header.innerHTML = `
-                <h3 style="margin:0; font-size:20px; font-weight:600; color:#1d2129;">📷 相机列表</h3>
-                <button style="background:transparent; border:none; font-size:24px; cursor:pointer; color:#999; padding:0 8px;">&times;</button>
-            `;
+            header.style.cssText =
+                'display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-shrink: 0;';
+            header.innerHTML =
+                '<h3 style="margin:0; font-size:20px; font-weight:600; color:#1d2129;">📷 相机列表</h3>' +
+                '<button style="background:transparent; border:none; font-size:26px; cursor:pointer; color:#999; padding:0 10px; line-height:1;">&times;</button>';
             var closeBtn = header.querySelector('button');
-            closeBtn.addEventListener('click', function () {
+
+            // 5. 关闭函数（带清理）
+            var toolbarCleanup = null;
+
+            function closeModal() {
                 if (document.body.contains(overlay)) {
+                    if (toolbarCleanup) { toolbarCleanup(); }
                     document.body.removeChild(overlay);
                 }
-            });
+            }
 
-            var tableWrap = document.createElement('div');
-            tableWrap.style.cssText = `
-                overflow-y: auto;
-                flex: 1;
-            `;
-            var table = document.createElement('table');
-            table.style.cssText = `
-                width: 100%;
-                border-collapse: collapse;
-                font-size: 14px;
-            `;
-            // 表头
-            var thead = document.createElement('thead');
-            thead.innerHTML = `
-                <tr style="background:#f0f4ff; border-bottom:2px solid #e8eaed;">
-                    <th style="padding:10px 12px; text-align:left; position:sticky; top:0; background:#f0f4ff;">型号</th>
-                    <th style="padding:10px 12px; text-align:left; position:sticky; top:0; background:#f0f4ff;">传感器尺寸</th>
-                    <th style="padding:10px 12px; text-align:left; position:sticky; top:0; background:#f0f4ff;">分辨率</th>
-                    <th style="padding:10px 12px; text-align:left; position:sticky; top:0; background:#f0f4ff;">靶面</th>
-                </tr>
-            `;
-            table.appendChild(thead);
+            closeBtn.addEventListener('click', closeModal);
 
-            var tbody = document.createElement('tbody');
-            var colMap = getCameraColumnMap();
-            var nameKey = colMap.name || '型号';
-            var senWKey = colMap.senW || '传感器长边';
-            var senHKey = colMap.senH || '传感器短边';
-            var resWKey = colMap.resW || '分辨率长边';
-            var resHKey = colMap.resH || '分辨率短边';
-            var targetKey = colMap.target || '靶面';
-
-            items.forEach(function (item) {
-                var row = item.row;
-                var name = row[nameKey] || '--';
-                var senW = row[senWKey] || '--';
-                var senH = row[senHKey] || '--';
-                var resW = row[resWKey] || '--';
-                var resH = row[resHKey] || '--';
-                var target = row[targetKey] || '--';
-
-                var tr = document.createElement('tr');
-                tr.style.cssText = `
-                    cursor: pointer;
-                    border-bottom: 1px solid #f0f2f5;
-                    transition: background 0.15s;
-                `;
-                tr.addEventListener('mouseenter', function () {
-                    this.style.background = '#f5f8ff';
-                });
-                tr.addEventListener('mouseleave', function () {
-                    this.style.background = '';
-                });
-                tr.addEventListener('click', function () {
-                    // 填充到搜索框
-                    var searchInput = document.getElementById('line-modelSelectSearch');
-                    if (searchInput) {
-                        searchInput.value = name;
-                    }
-                    var hiddenSelect = document.getElementById('line-modelSelect');
-                    if (hiddenSelect) {
-                        hiddenSelect.value = JSON.stringify(row);
-                    }
-                    // 直接应用相机数据
-                    applyCameraToLineInputs(row);
-                    // 触发隐藏 select 的 change 事件
-                    if (hiddenSelect) {
-                        var evt = new Event('change', { bubbles: true });
-                        hiddenSelect.dispatchEvent(evt);
-                    }
-                    // 关闭模态框
-                    if (document.body.contains(overlay)) {
-                        document.body.removeChild(overlay);
-                    }
-                });
-
-                tr.innerHTML = `
-                    <td style="padding:10px 12px; font-weight:500;">${name}</td>
-                    <td style="padding:10px 12px;">${senW} × ${senH} mm</td>
-                    <td style="padding:10px 12px;">${resW} × ${resH}</td>
-                    <td style="padding:10px 12px;">${target}</td>
-                `;
-                tbody.appendChild(tr);
-            });
-            table.appendChild(tbody);
-            tableWrap.appendChild(table);
-            modal.appendChild(header);
-            modal.appendChild(tableWrap);
-            overlay.appendChild(modal);
-            document.body.appendChild(overlay);
-
-            // 点击遮罩关闭
             overlay.addEventListener('click', function (e) {
-                if (e.target === overlay && document.body.contains(overlay)) {
-                    document.body.removeChild(overlay);
-                }
+                if (e.target === overlay) closeModal();
             });
-            // ESC 键关闭
+
             var escHandler = function (e) {
                 if (e.key === 'Escape') {
-                    if (document.body.contains(overlay)) {
-                        document.body.removeChild(overlay);
-                        document.removeEventListener('keydown', escHandler);
-                    }
+                    closeModal();
+                    document.removeEventListener('keydown', escHandler);
                 }
             };
             document.addEventListener('keydown', escHandler);
+
+            // 6. 表格容器
+            var contentWrap = document.createElement('div');
+            contentWrap.style.cssText =
+                'display: flex; gap: 20px; overflow-y: auto; flex: 1; align-items: stretch; min-height: 300px;';
+
+            // 收集所有表格的高亮更新函数
+            var highlightUpdaters = [];
+
+            // 选中相机回调
+            function onSelectCamera(row, name) {
+                var searchInput = document.getElementById('line-modelSelectSearch');
+                if (searchInput) searchInput.value = name;
+                var hiddenSelect = document.getElementById('line-modelSelect');
+                if (hiddenSelect) hiddenSelect.value = JSON.stringify(row);
+                applyCameraToLineInputs(row);
+                if (hiddenSelect) {
+                    var evt = new Event('change', { bubbles: true });
+                    hiddenSelect.dispatchEvent(evt);
+                }
+                closeModal();
+            }
+
+            // 7. 创建各系列表格
+            var tableConfigs = [
+                { key: 'cgItems', title: 'CG 系列', color: '#4080ff', icon: '🔵' },
+                { key: 'crItems', title: 'CR 系列', color: '#ff7700', icon: '🟠' },
+                { key: 'otherItems', title: '其他系列', color: '#888888', icon: '⚪' }
+            ];
+
+            tableConfigs.forEach(function (cfg) {
+                var itemsData = groups[cfg.key];
+                if (itemsData && itemsData.length > 0) {
+                    var tableObj = createCameraTable(cfg.title, itemsData, cfg.color, cfg.icon, onSelectCamera);
+                    contentWrap.appendChild(tableObj.element);
+                    highlightUpdaters.push(tableObj.updateHighlight);
+                }
+            });
+
+            if (contentWrap.children.length === 0) {
+                var emptyMsg = document.createElement('div');
+                emptyMsg.style.cssText = 'flex:1; text-align:center; padding:40px; color:#999; font-size:16px;';
+                emptyMsg.textContent = '暂无相机数据';
+                contentWrap.appendChild(emptyMsg);
+            }
+
+            // 8. 工具栏（视野 + 精度计算 + 对比触发）
+            var mainFovInput = document.getElementById('line-fovW');
+
+            // 结果回调：更新所有表格的高亮
+            function onResult(pixels) {
+                highlightUpdaters.forEach(function (updateFn) {
+                    updateFn(pixels);
+                });
+            }
+
+            var toolbarResult = buildPrecisionToolbar(mainFovInput, onResult);
+            toolbarCleanup = toolbarResult.cleanup;
+            var toolbar = toolbarResult.element;
+
+            // 如果页面主输入框已有值，自动执行一次计算
+            if (mainFovInput && mainFovInput.value && parseFloat(mainFovInput.value) > 0) {
+                setTimeout(function () {
+                    toolbarResult.doCalc();
+                }, 100);
+            }
+
+            // 9. 组装弹窗
+            modal.appendChild(header);
+            modal.appendChild(toolbar);
+            modal.appendChild(contentWrap);
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
         });
     }
+
+    function syncDistCamToArea() {
+        var distCamInput = document.getElementById('line-distCam');
+        if (!distCamInput) {
+            console.warn('syncDistCamToArea: 未找到 line-distCam');
+            return;
+        }
+        var val = distCamInput.value;
+        console.log('🔄 syncDistCamToArea 执行，当前值：', val);
+        var distInputs = document.querySelectorAll('input[id$="-distCam"]');
+        distInputs.forEach(function (input) {
+            if (input.id !== 'line-distCam') {
+                input.value = val;
+                var evt = new Event('input', { bubbles: true });
+                input.dispatchEvent(evt);
+            }
+        });
+    }
+    // 暴露给全局，供 script.js 调用
+    window.syncDistCamToArea = syncDistCamToArea;
+
+    // 直接更新面阵工作距离，不通过 line-distCam 中转
+    function updateAreaDistCam(value) {
+        window._latestAreaWd = value; // 缓存最新值
+        var distInputs = document.querySelectorAll('input[id$="-distCam"]');
+        distInputs.forEach(function (input) {
+            if (input.id !== 'line-distCam') {
+                input.value = value;
+                var evt = new Event('input', { bubbles: true });
+                input.dispatchEvent(evt);
+            }
+        });
+    }
+    window.updateAreaDistCam = updateAreaDistCam;
 
     // ============================================================
     //  15. 初始化
@@ -1482,16 +2120,34 @@
         // 默认模式
         setCalcMode('wd');
 
-
-        // 确保所有 lens-series-body 为 flex 容器
+        // 确保所有 lens-series-body 为 flex 容器（默认展开）
         document.querySelectorAll('.lens-series-body').forEach(function (el) {
             el.style.display = 'flex';
             el.style.flexWrap = 'wrap';
             el.style.gap = '10px';
         });
 
-        // 在 init 函数中，添加事件监听（替换原来的）
+        // ----- 折叠/展开事件（带状态保存） -----
         var lineWrap = document.getElementById('lineSelectorWrap');
+        lineWrap.addEventListener('click', function (e) {
+            var header = e.target.closest('.lens-series-header');
+            if (header) {
+                var group = header.closest('.lens-series-group');
+                var body = header.nextElementSibling;
+                if (body && body.classList.contains('lens-series-body')) {
+                    var series = group ? group.dataset.series : '';
+                    if (body.style.display === 'none') {
+                        body.style.display = 'flex';
+                        if (series) saveCollapseState(series, false);
+                    } else {
+                        body.style.display = 'none';
+                        if (series) saveCollapseState(series, true);
+                    }
+                }
+            }
+        });
+
+        // ----- 选择镜头事件 -----
         lineWrap.addEventListener('click', function (e) {
             var card = e.target.closest('.lens-card');
             if (card) {
@@ -1518,38 +2174,41 @@
                     wdEl.textContent = wd ? wd + ' mm' : '--';
                 }
 
+                // ---- 新增：同步到 line-distCam 输入框并触发同步 ----
+                // 同步镜头型号到面阵
+                var model = card.dataset.model || '';
+                if (model) {
+                    var lensColMap = getLensColumnMap();
+                    var nameKey = lensColMap.name || '镜头型号';
+                    // 从全局镜头数据中查找匹配的行
+                    var lensRow = window.areaDataManager.lensData.find(function (row) {
+                        return row[nameKey] && String(row[nameKey]).trim() === model;
+                    });
+                    if (lensRow) {
+                        syncLensToArea(lensRow);
+                    }
+                }
+
+                // 同步工作距离到 line-distCam 并触发同步
+                // 直接更新面阵工作距离，不改变镜头选型的输入框
+                if (wd) {
+                    updateAreaDistCam(wd);
+                }
+
                 // 如果是 fov 模式，更新顶部结果区
                 if (_calcMode === 'fov') {
                     var fovW = parseFloat(card.dataset.fovw) || 0;
                     var fovH = parseFloat(card.dataset.fovh) || 0;
                     console.log('📌 点击卡片，fovW=' + fovW + ', fovH=' + fovH);
                     if (fovW > 0) {
-                        // 只要有长边视野，就更新（短边可能为0，但 updateResultArea 能处理）
                         updateResultArea(fovW, fovH);
                     } else {
-                        // 如果没有视野数据，显示“该镜头不合适”
                         if (lineResSize) lineResSize.textContent = '-- (该镜头不合适)';
                         if (lineResPrecision) lineResPrecision.textContent = '--';
                     }
                 }
             }
         });
-
-        // 在 init 中，添加事件委托（可放在已有点击事件之后）
-        document.getElementById('lineSelectorWrap').addEventListener('click', function (e) {
-            var header = e.target.closest('.lens-series-header');
-            if (header) {
-                var body = header.nextElementSibling;
-                if (body && body.classList.contains('lens-series-body')) {
-                    if (body.style.display === 'none') {
-                        body.style.display = 'flex';
-                    } else {
-                        body.style.display = 'none';
-                    }
-                }
-            }
-        });
-
 
         // ---- 添加上传按钮（独立更新） ----
         var top = document.querySelector('.line-selector-top');
@@ -1558,7 +2217,7 @@
         // 确保 top 是 flex 容器
         top.style.display = 'flex';
         top.style.alignItems = 'stretch';
-        top.style.gap = '20px'; // 各列间距
+        top.style.gap = '20px';
 
         // 找到 .result-area
         var resultArea = document.querySelector('.line-selector-top .result-area');
@@ -1567,15 +2226,16 @@
         // 创建按钮容器，放在 result-area 左边
         var btnWrapper = document.createElement('div');
         btnWrapper.style.cssText = `
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 0 10px;
-        background: #fff;
-        border-radius: 14px;
-        border: 1px solid #eef0f4;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-    `;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 10px;
+            background: #fff;
+            border-radius: 14px;
+            border: 1px solid #eef0f4;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+             height: 60px;
+        `;
 
         var fileInput = document.createElement('input');
         fileInput.type = 'file';
@@ -1587,17 +2247,17 @@
         uploadBtn.textContent = '📂 更新数据';
         uploadBtn.className = 'line-upload-btn';
         uploadBtn.style.cssText = `
-        padding: 10px 14px;
-        font-size: 14px;
-        border: none;
-        border-radius: 8px;
-        background: #f0f4ff;
-        color: #1d2129;
-        cursor: pointer;
-        white-space: nowrap;
-        font-weight: 500;
-        transition: 0.2s;
-    `;
+            padding: 10px 14px;
+            font-size: 14px;
+            border: none;
+            border-radius: 8px;
+            background: #f0f4ff;
+            color: #1d2129;
+            cursor: pointer;
+            white-space: nowrap;
+            font-weight: 500;
+            transition: 0.2s;
+        `;
         uploadBtn.onmouseover = () => uploadBtn.style.background = '#e0e8ff';
         uploadBtn.onmouseout = () => uploadBtn.style.background = '#f0f4ff';
 
@@ -1619,7 +2279,6 @@
             uploadBtn.disabled = true;
             window.areaDataManager.loadExcel(file)
                 .then(function () {
-                    // ========== 添加成功弹窗（与面阵一致） ==========
                     alert('数据更新成功！\n文件: ' + window.areaDataManager.fileName + '\n相机: ' + window.areaDataManager.cameraData.length + '条, 镜头: ' + window.areaDataManager.lensData.length + '条');
 
                     uploadBtn.textContent = '✅ 已更新';
@@ -1633,7 +2292,6 @@
                     } else {
                         onDataUpdated();
                     }
-                    // 同步面阵状态（如果有）
                     var statusSpan = document.getElementById('dataStatus');
                     if (statusSpan) {
                         statusSpan.textContent = window.areaDataManager.getVersionInfo();
@@ -1647,11 +2305,21 @@
                 });
             fileInput.value = '';
         });
+        // 新增：工作距离同步监听
+        if (lineDistCam) {
+            lineDistCam.addEventListener('input', syncDistCamToArea);
+            lineDistCam.addEventListener('change', syncDistCamToArea);
+        }
+
         // 绑定相机型号标签点击事件
         bindCameraLabelClick();
 
         console.log('🔍 镜头选型器已初始化 (Excel驱动版)');
     }
+
+
+
+
 
     if (document.readyState === 'complete' || document.readyState === 'interactive') {
         init();
