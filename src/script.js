@@ -1,356 +1,193 @@
-// 全局镜头图片
-const lensImage = new Image();
-lensImage.src = "lens.png";
-lensImage.onload = () => console.log("镜头图片加载完成");
-lensImage.onerror = () => console.warn("未找到lens.png，将使用默认方块");
-var gltfLoader = new THREE.GLTFLoader();
-var cameraModel = null;   // 相机模型（或组合模型）
-var lensModel = null;     // 镜头模型（如果分开）
-var externalModels = [];  // 用于存储已加载的模型组，方便管理
-var lightModel = null;   // 背光专用的光源模型
-
-// Excel管理类
-class ExcelDataManager {
-    constructor() {
-        // ---- 相机数据（Sheet1） ----
-        this.cameraData = [];
-        this.cameraColumnMap = {};
-        this.cameraModelNames = [];
-        this.cameraModelRowMap = {};
-        // ---- 镜头数据（Sheet2） ----
-        this.lensData = [];
-        this.lensColumnMap = {};
-        this.lensModelNames = [];
-        this.lensModelRowMap = {};
-        // ---- 通用 ----
-        this.fileName = '';
-        this.loadTime = '';
-        this.isLoaded = false;
-        // 兼容旧代码：指向相机数据
-        this.data = [];
-        this.columnMap = {};
-        this.modelNames = [];
-        this.modelRowMap = {};
-    }
-
-    loadExcel(file) {
-        var self = this;
-        return new Promise(function (resolve, reject) {
-            var reader = new FileReader();
-            reader.onload = function (ev) {
-                try {
-                    var data = new Uint8Array(ev.target.result);
-                    var workbook = XLSX.read(data, { type: 'array' });
-                    var sheetNames = workbook.SheetNames;
-
-                    // 重置数据
-                    self.cameraData = [];
-                    self.lensData = [];
-
-                    for (var i = 0; i < sheetNames.length; i++) {
-                        var name = sheetNames[i];
-                        var sheet = workbook.Sheets[name];
-                        var json = XLSX.utils.sheet_to_json(sheet);
-                        if (!json || json.length === 0) continue;
-
-                        // 根据工作表名称分发
-                        if (name === 'Sheet1') {
-                            self.cameraData = json;
-                            self.cameraColumnMap = self.detectColumns(json, 'camera');
-                            self.buildCameraIndex();
-                        } else if (name === 'Sheet2') {
-                            self.lensData = json;
-                            self.lensColumnMap = self.detectColumns(json, 'lens');
-                            self.buildLensIndex();
-                        }
-                        // Sheet3 空表忽略
-                    }
-
-                    if (self.cameraData.length === 0 && self.lensData.length === 0) {
-                        reject(new Error('Excel文件没有有效数据'));
-                        return;
-                    }
-
-                    // 兼容旧代码：默认指向相机数据
-                    self.data = self.cameraData;
-                    self.columnMap = self.cameraColumnMap;
-                    self.modelNames = self.cameraModelNames;
-                    self.modelRowMap = self.cameraModelRowMap;
-
-                    self.fileName = file.name;
-                    self.loadTime = new Date().toLocaleString();
-                    self.isLoaded = true;
-                    resolve(self.data);
-                } catch (error) {
-                    reject(error);
-                }
-            };
-            reader.onerror = function () {
-                reject(new Error('读取文件失败'));
-            };
-            reader.readAsArrayBuffer(file);
-        });
-    }
-
-    // 检测列名（根据表格类型）
-    detectColumns(jsonData, type) {
-        if (!jsonData || jsonData.length === 0) return {};
-        var firstRow = jsonData[0];
-        var keys = Object.keys(firstRow);
-        var findKey = function (patterns) {
-            for (var i = 0; i < patterns.length; i++) {
-                var p = patterns[i];
-                for (var j = 0; j < keys.length; j++) {
-                    var k = keys[j];
-                    if (k.indexOf(p) !== -1 || k.toLowerCase().indexOf(p.toLowerCase()) !== -1) {
-                        return k;
-                    }
-                }
-            }
-            return '';
-        };
-
-        if (type === 'camera') {
-            return {
-                name: findKey(['型号']),
-                senW: findKey(['传感器长边']),
-                senH: findKey(['传感器短边']),
-                resW: findKey(['分辨率长边']),
-                resH: findKey(['分辨率短边']),
-                target: findKey(['相机靶面', '靶面'])
-            };
-        } else if (type === 'lens') {
-            return {
-                name: findKey(['镜头型号']),
-                target: findKey(['镜头靶面', '靶面']),
-                focal: findKey(['焦距', 'focal', 'f']),
-                formula: findKey(['视野公式']),
-                distFormula: findKey(['距离公式']),
-                tubeThreshold: findKey(['接圈阈值', 'TubeThreshold']),
-                threadSpec: findKey(['螺纹规格', '螺纹', 'thread'])
-            };
-        }
-        return {};
-    }
-
-    // 建立相机型号索引
-    buildCameraIndex() {
-        var self = this;
-        var nameKey = this.cameraColumnMap.name || '型号';
-        this.cameraModelNames = [];
-        this.cameraModelRowMap = {};
-        for (var i = 0; i < this.cameraData.length; i++) {
-            var row = this.cameraData[i];
-            var displayName = row[nameKey] || ('型号' + (i + 1));
-            displayName = String(displayName).trim();
-            if (!displayName) continue;
-            if (!this.cameraModelRowMap[displayName]) {
-                this.cameraModelRowMap[displayName] = row;
-                this.cameraModelNames.push(displayName);
-            }
-        }
-        this.cameraModelNames.sort(function (a, b) {
-            return a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base' });
-        });
-    }
-
-    // 建立镜头型号索引
-    buildLensIndex() {
-        var self = this;
-        var nameKey = this.lensColumnMap.name || '镜头型号';
-        this.lensModelNames = [];
-        this.lensModelRowMap = {};
-        for (var i = 0; i < this.lensData.length; i++) {
-            var row = this.lensData[i];
-            var displayName = row[nameKey] || ('镜头型号' + (i + 1));
-            displayName = String(displayName).trim();
-            if (!displayName) continue;
-            if (!this.lensModelRowMap[displayName]) {
-                this.lensModelRowMap[displayName] = row;
-                this.lensModelNames.push(displayName);
-            }
-        }
-        this.lensModelNames.sort(function (a, b) {
-            return a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base' });
-        });
-    }
-
-    // 获取相机型号列表（用于搜索选择器）
-    getCameraItems() {
-        var items = [];
-        for (var i = 0; i < this.cameraModelNames.length; i++) {
-            var name = this.cameraModelNames[i];
-            items.push({ name: name, row: this.cameraModelRowMap[name] });
-        }
-        return items;
-    }
-
-    // 获取镜头型号列表
-    getLensItems() {
-        var items = [];
-        for (var i = 0; i < this.lensModelNames.length; i++) {
-            var name = this.lensModelNames[i];
-            items.push({ name: name, row: this.lensModelRowMap[name] });
-        }
-        return items;
-    }
-
-    // 相机数据填充输入框
-    applyCameraToInputs(row, prefix) {
-        var map = this.cameraColumnMap;
-        var inputMap = {
-            'senW': map.senW,
-            'senH': map.senH,
-            'resW': map.resW,
-            'resH': map.resH,
-            'target': map.target
-        };
-        var oldMap = this.detectColumns(this.cameraData, 'camera');
-        var focalKey = this.findKeyInRow(this.cameraData[0] || {}, ['焦距', 'focal', 'f']);
-        var distCamKey = this.findKeyInRow(this.cameraData[0] || {}, ['相机工作距离', 'cam_dist', '工作距离', '距离']);
-        var distLightKey = this.findKeyInRow(this.cameraData[0] || {}, ['光源工作距离', 'light_dist', '光源距离']);
-
-        for (var id in inputMap) {
-            var colKey = inputMap[id];
-            var element = document.getElementById(prefix + id);
-            if (element && colKey && row[colKey] !== undefined && row[colKey] !== null) {
-                element.value = row[colKey];
-            }
-        }
-        if (focalKey) {
-            var focalEl = document.getElementById(prefix + 'focal');
-            if (focalEl && row[focalKey] !== undefined && row[focalKey] !== null) {
-                focalEl.value = row[focalKey];
-            }
-        }
-        if (distCamKey) {
-            var distCamEl = document.getElementById(prefix + 'distCam');
-            if (distCamEl && row[distCamKey] !== undefined && row[distCamKey] !== null) {
-                distCamEl.value = row[distCamKey];
-            }
-        }
-        if (distLightKey) {
-            var distLightEl = document.getElementById(prefix + 'distLight');
-            if (distLightEl && row[distLightKey] !== undefined && row[distLightKey] !== null) {
-                distLightEl.value = row[distLightKey];
-            }
-        }
-    }
-
-    // 辅助：在行数据中查找键
-    findKeyInRow(row, patterns) {
-        if (!row) return '';
-        var keys = Object.keys(row);
-        for (var i = 0; i < patterns.length; i++) {
-            var p = patterns[i];
-            for (var j = 0; j < keys.length; j++) {
-                var k = keys[j];
-                if (k.indexOf(p) !== -1 || k.toLowerCase().indexOf(p.toLowerCase()) !== -1) {
-                    return k;
-                }
-            }
-        }
-        return '';
-    }
-
-    // ---- 兼容旧代码的方法 ----
-    autoDetectColumns() {
-        return this.cameraColumnMap;
-    }
-
-    buildModelIndex() {
-        this.buildCameraIndex();
-        this.modelNames = this.cameraModelNames;
-        this.modelRowMap = this.cameraModelRowMap;
-    }
-
-    getVersionInfo() {
-        if (!this.isLoaded) return '未加载';
-        return this.fileName + ' | ' + this.loadTime + ' | 相机:' + this.cameraData.length + '条, 镜头:' + this.lensData.length + '条';
-    }
-
-    populateSelect(selectElement) {
-        selectElement.innerHTML = '<option value="">-- 请选择型号 --</option>';
-        if (!this.isLoaded || !this.cameraData || this.cameraData.length === 0) return;
-        var nameKey = this.cameraColumnMap.name || '型号';
-        for (var i = 0; i < this.cameraData.length; i++) {
-            var row = this.cameraData[i];
-            var opt = document.createElement('option');
-            opt.value = JSON.stringify(row);
-            var displayName = row[nameKey] || ('型号' + (i + 1));
-            opt.textContent = displayName;
-            selectElement.appendChild(opt);
-        }
-    }
-
-    applyToInputs(row, prefix) {
-        this.applyCameraToInputs(row, prefix);
-    }
-
-    saveToLocal() {
-        const saveObj = {
-            cameraData: this.cameraData,
-            lensData: this.lensData,
-            cameraColumnMap: this.cameraColumnMap,
-            lensColumnMap: this.lensColumnMap,
-            fileName: this.fileName,
-            loadTime: this.loadTime,
-            data: this.cameraData,
-            columnMap: this.cameraColumnMap
-        };
-        localStorage.setItem("excelCameraData", JSON.stringify(saveObj));
-    }
-
-    loadFromLocal() {
-        const str = localStorage.getItem("excelCameraData");
-        if (!str) return false;
-        try {
-            const obj = JSON.parse(str);
-            this.cameraData = obj.cameraData || obj.data || [];
-            this.lensData = obj.lensData || [];
-            this.cameraColumnMap = obj.cameraColumnMap || obj.columnMap || {};
-            this.lensColumnMap = obj.lensColumnMap || {};
-            this.fileName = obj.fileName || '';
-            this.loadTime = obj.loadTime || '';
-            this.isLoaded = true;
-            this.buildCameraIndex();
-            this.buildLensIndex();
-            this.data = this.cameraData;
-            this.columnMap = this.cameraColumnMap;
-            this.modelNames = this.cameraModelNames;
-            this.modelRowMap = this.cameraModelRowMap;
-            return true;
-        } catch (e) {
-            localStorage.removeItem("excelCameraData");
-            return false;
-        }
-    }
-
-    clearLocal() {
-        localStorage.removeItem("excelCameraData");
-    }
-}
 
 // --- DOM 引用 ---
 var areaDataManager = new ExcelDataManager();
 var calcBtn = document.getElementById('calcBtn');
 var resetBtn = document.getElementById('resetBtn');
+var areaDataManager = new ExcelDataManager();
 
 var rad2deg = function (r) { return r * 180 / Math.PI; };
 var deg2rad = function (d) { return d * Math.PI / 180; };
 
-// Three.js 相关变量
-var threeScene, threeCamera, threeRenderer, threeControls;
-var labelRenderer;
-var labelObjects = [];
-var activeContainerId = 'three-sf';
-var modelsLoaded = false;
-// 同轴光拖拽相关全局变量
-var dragControls = null;
-var draggableSphere = null;
-var coaxSceneObjects = [];
-var coaxDragParams = null;
-var coaxDistLabel = null;
+
+// ============================================================
+//  配置驱动辅助函数（第一步重构）
+//  使用 window.MODULES_CONFIG 替代硬编码
+// ============================================================
+
+/**
+ * 获取当前模块的配置
+ */
+function getCurrentModuleConfig() {
+    if (!window.MODULES_CONFIG) {
+        console.warn('⚠️ MODULES_CONFIG 未加载，请检查 modules-config.js');
+        return null;
+    }
+    return window.MODULES_CONFIG.getModuleConfig(currentSub);
+}
+
+/**
+ * 根据当前模块配置，收集所有输入框的值
+ * 自动处理特殊输入（如 arrangement 下拉框）
+ */
+function collectInputsForCurrentModule() {
+    const config = getCurrentModuleConfig();
+    if (!config) return null;
+
+    const values = {};
+
+    config.inputs.forEach(input => {
+        // 直接通过完整 ID 获取元素
+        let el = document.getElementById(input.id);
+
+        // 如果是下拉框（select），特殊处理一下值解析
+        if (el) {
+            let val = el.value;
+
+            if (input.type === 'number') {
+                const parsed = parseFloat(val);
+                values[input.id] = isNaN(parsed) ? (input.default || 0) : parsed;
+            } else if (input.type === 'select') {
+                // 排列分布：尝试解析 JSON（如果是空字符串则返回 null）
+                if (val && val.startsWith('{')) {
+                    try { values[input.id] = JSON.parse(val); }
+                    catch (e) { values[input.id] = val; }
+                } else {
+                    values[input.id] = val;
+                }
+            } else {
+                values[input.id] = val;
+            }
+        } else {
+            // 如果 DOM 元素不存在，使用默认值并警告
+            console.warn(`⚠️ 未找到输入元素: ${input.id}，使用默认值`);
+            values[input.id] = input.default || '';
+        }
+    });
+
+    return values;
+}
+
+/**
+ * 根据当前模块配置，动态渲染输入框
+ * 替代所有硬编码的 #size-inputs / #custom-inputs 等
+ */
+function renderInputsForModule(moduleId) {
+    const config = getCurrentModuleConfig();
+    if (!config) {
+        console.warn('⚠️ 未找到模块配置:', moduleId);
+        return;
+    }
+
+    const container = document.getElementById('dynamic-input-area');
+    if (!container) {
+        console.warn('⚠️ 未找到 #dynamic-input-area 容器');
+        return;
+    }
+
+    let html = '';
+    const inputs = config.inputs || [];
+
+    inputs.forEach(input => {
+        const id = input.id;
+        const label = input.label;
+        const type = input.type || 'text';
+        const defaultValue = input.default !== undefined ? input.default : '';
+
+        // 特殊处理：下拉选择框（排列分布）
+        if (type === 'select') {
+            // 先渲染一个空 select，后面由 updateArrangementOptions 填充选项
+            html += `
+                <div class="form-item">
+                    <label for="${id}">${label}</label>
+                    <select id="${id}"></select>
+                </div>
+            `;
+        } else {
+            // 普通输入框（text / number）
+            const stepAttr = (type === 'number') ? ' step="any"' : '';
+            html += `
+                <div class="form-item">
+                    <label for="${id}">${label}</label>
+                    <input type="${type}" id="${id}" value="${defaultValue}" placeholder="请输入..." ${stepAttr} />
+                </div>
+            `;
+        }
+    });
+
+    container.innerHTML = html;
+
+    // ---- 后处理：绑定特殊事件 ----
+    // 1. 如果当前模块有相机个数输入框，绑定排列更新事件
+    const countInput = document.getElementById('customCameraCount');
+    if (countInput) {
+        // 移除旧监听器，避免重复绑定（用新函数替换）
+        const newHandler = function () {
+            updateArrangementOptions();
+        };
+        // 保存引用以便后续清理（可选）
+        countInput.removeEventListener('input', countInput._arrangeHandler);
+        countInput.removeEventListener('change', countInput._arrangeHandler);
+        countInput._arrangeHandler = newHandler;
+        countInput.addEventListener('input', newHandler);
+        countInput.addEventListener('change', newHandler);
+    }
+
+    // 2. 如果当前模块有排列分布下拉框，立即填充选项
+    if (inputs.some(inp => inp.id === 'arrangementSelect')) {
+        updateArrangementOptions();
+    }
+
+    // 3. 触发自定义事件，通知其他模块（如 3D 场景）输入已更新（可选）
+    const event = new CustomEvent('inputsRendered', { detail: { moduleId: moduleId } });
+    document.dispatchEvent(event);
+
+    // ---- 新增：工作距离同步 ----
+    if (typeof window.syncDistCamToArea === 'function') {
+        setTimeout(function () {
+            // 1. 先从 line-distCam 同步（用于手动输入）
+            window.syncDistCamToArea();
+
+            // 2. 如果有缓存的最新面阵工作距离，则覆盖（确保点击卡片的值生效）
+            if (window._latestAreaWd !== undefined && window._latestAreaWd !== null && window._latestAreaWd !== '') {
+                if (typeof window.updateAreaDistCam === 'function') {
+                    window.updateAreaDistCam(window._latestAreaWd);
+                }
+            }
+        }, 20);
+    }
+}
+
+
+/**
+ * 根据当前模块配置和计算结果，更新 UI 结果区
+ * 替代大量的 document.getElementById('xxx').innerText
+ */
+function renderResultsForCurrentModule(resultData) {
+    const config = getCurrentModuleConfig();
+    if (!config) return;
+
+    const map = config.resultMap;
+    if (!map) return;
+
+    // 遍历结果映射，更新对应的 DOM 元素
+    for (const [key, elementId] of Object.entries(map)) {
+        const el = document.getElementById(elementId);
+        if (!el) continue;
+
+        let value = resultData[key];
+        // 如果值是数字，保留一位小数并添加单位（由调用方决定）
+        if (typeof value === 'number' && !isNaN(value)) {
+            // 这里不自动加单位，因为有些是角度（°）有些是长度（mm）
+            // 由 calculate 函数在赋值时直接传格式化好的字符串
+            el.innerText = value;
+        } else if (value !== undefined && value !== null) {
+            el.innerText = value;
+        } else {
+            el.innerText = '--';
+        }
+    }
+}
+
 
 // --- 子状态 ---
 var currentGroup = 'size';
@@ -361,156 +198,38 @@ function clearCanvas(canvasId) {
     var canvas = document.getElementById(canvasId);
     if (canvas) {
         var ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        canvas.width = 800;
-        canvas.height = 200;
-        canvas.style.width = '';
-        canvas.style.height = '';
-    }
-}
-
-// --- 辅助函数：清空3D场景中的动态物体 ---
-function clearThreeScene() {
-    console.log('🔍 clearThreeScene 被调用');
-
-    if (threeScene) {
-        var toRemove = [];
-        threeScene.children.forEach(function (child) {
-            if (child.type !== 'AmbientLight' && child.type !== 'DirectionalLight' &&
-                child.type !== 'GridHelper' && child.type !== 'AxesHelper' &&
-                child.type !== 'PerspectiveCamera' && child.type !== 'Scene') {
-                toRemove.push(child);
-            }
-        });
-        toRemove.forEach(function (child) {
-            threeScene.remove(child);
-            if (child.geometry) child.geometry.dispose();
-            if (child.material) child.material.dispose();
-        });
-
-        if (draggableSphere) {
-            while (draggableSphere.children.length > 0) {
-                var child = draggableSphere.children[0];
-                draggableSphere.remove(child);
-                if (child.geometry) child.geometry.dispose();
-                if (child.material) child.material.dispose();
-            }
-            threeScene.remove(draggableSphere);
-            draggableSphere = null;
+        if (ctx) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            canvas.width = 800;
+            canvas.height = 200;
+            canvas.style.width = '';
+            canvas.style.height = '';
         }
-        if (dragControls) {
-            dragControls.dispose();
-            dragControls = null;
-        }
-        coaxSceneObjects = [];
-        coaxDragParams = null;
-
-        modelsLoaded = false;
-        cameraModel = null;
-        lensModel = null;
-    }
-
-    labelObjects.forEach(function (obj) {
-        if (threeScene) threeScene.remove(obj);
-    });
-    labelObjects = [];
-
-    if (coaxDistLabel) {
-        threeScene.remove(coaxDistLabel);
-        coaxDistLabel = null;
-    }
-
-    if (lightModel) {
-        threeScene.remove(lightModel);
-        lightModel = null;
     }
 }
 
 // --- 清除指定子功能的结果数据 ---
 function clearSubResults(subId) {
-    if (subId === 'size-face') {
-        document.getElementById('sfFovH').innerText = '--';
-        document.getElementById('sfFovV').innerText = '--';
-        document.getElementById('sfFovD').innerText = '--';
-        document.getElementById('sfSizeText').innerText = '--';
-        document.getElementById('sfLightW').innerText = '--';
-        document.getElementById('sfLightH').innerText = '--';
-    } else if (subId === 'size-bar') {
-        document.getElementById('sbFovH').innerText = '--';
-        document.getElementById('sbFovV').innerText = '--';
-        document.getElementById('sbFovD').innerText = '--';
-        document.getElementById('sbSizeText').innerText = '--';
-        document.getElementById('sbLightW').innerText = '--';
-        document.getElementById('sbLightH').innerText = '--';
-    } else if (subId === 'size-ring') {
-        document.getElementById('srFovH').innerText = '--';
-        document.getElementById('srFovV').innerText = '--';
-        document.getElementById('srFovD').innerText = '--';
-        document.getElementById('srSizeText').innerText = '--';
-        document.getElementById('srInnerDiam').innerText = '--';
-        document.getElementById('srOuterDiam').innerText = '--';
-    } else if (subId === 'size-custom') {
-        document.getElementById('scFovH').innerText = '--';
-        document.getElementById('scFovV').innerText = '--';
-        document.getElementById('scFovD').innerText = '--';
-        document.getElementById('scSizeText').innerText = '--';
-        document.getElementById('scLightW').innerText = '--';
-        document.getElementById('scLightH').innerText = '--';
-        document.getElementById('scTotalSize').innerText = '--';
-        clearCanvas('scCanTotal');
-    } else if (subId === 'size-back') {
-        document.getElementById('bfFovH').innerText = '--';
-        document.getElementById('bfFovV').innerText = '--';
-        document.getElementById('bfFovD').innerText = '--';
-        document.getElementById('bfSizeText').innerText = '--';
-        document.getElementById('bfLightW').innerText = '--';
-        document.getElementById('bfLightH').innerText = '--';
-    } else if (subId === 'spot-face') {
-        document.getElementById('spfFovH').innerText = '--';
-        document.getElementById('spfFovV').innerText = '--';
-        document.getElementById('spfFovD').innerText = '--';
-        document.getElementById('spfSizeText').innerText = '--';
-        document.getElementById('spfSpotText').innerText = '--';
-    } else if (subId === 'spot-coax') {
-        document.getElementById('spcFovH').innerText = '--';
-        document.getElementById('spcFovV').innerText = '--';
-        document.getElementById('spcFovD').innerText = '--';
-        document.getElementById('spcSizeText').innerText = '--';
-        document.getElementById('spcLightText').innerText = '--';
-        document.getElementById('spcSpotText').innerText = '--';
-    } else if (subId === 'spot-ring') {
-        document.getElementById('sprFovH').innerText = '--';
-        document.getElementById('sprFovV').innerText = '--';
-        document.getElementById('sprFovD').innerText = '--';
-        document.getElementById('sprSizeText').innerText = '--';
-        document.getElementById('sprSpotText').innerText = '--';
+    const config = getCurrentModuleConfig();
+    if (!config) return;
+
+    // 通用清空：所有结果字段设为 '--'
+    for (const [key, elementId] of Object.entries(config.resultMap)) {
+        const el = document.getElementById(elementId);
+        if (el) el.innerText = '--';
     }
 
+    // 特殊处理：定制面光需要清空画布
+    if (subId === 'size-custom') {
+        clearCanvas('scCanTotal');
+    }
+
+    document.getElementById('commonFovH').innerText = '--';
+    document.getElementById('commonFovV').innerText = '--';
+    document.getElementById('commonFovD').innerText = '--';
+    document.getElementById('commonSizeText').innerText = '--';
+
     clearThreeScene();
-}
-
-function loadExternalModels() {
-    if (modelsLoaded) return;
-    gltfLoader.load('models/camera.glb', function (gltf) {
-        cameraModel = gltf.scene;
-        cameraModel.userData.isModel = true;
-        cameraModel.position.set(0, 0, -22);
-        cameraModel.rotation.set(-Math.PI / 2, 0, 0);
-        threeScene.add(cameraModel);
-        modelsLoaded = true;
-    }, undefined, function (error) {
-        console.error('相机模型加载失败', error);
-    });
-
-    gltfLoader.load('models/lens.glb', function (gltf) {
-        lensModel = gltf.scene;
-        lensModel.userData.isModel = true;
-        lensModel.position.set(0, 0, -17);
-        lensModel.rotation.set(Math.PI / 2, 0, 0);
-        threeScene.add(lensModel);
-    }, undefined, function (error) {
-        console.error('镜头模型加载失败', error);
-    });
 }
 
 // ============================================================
@@ -555,13 +274,7 @@ function initSearchSelect(wrapper, type) {
                     var row = JSON.parse(this.dataset.row);
                     input.value = name;
                     dropdown.classList.remove('show');
-                    var isLens = selectId && selectId.endsWith('lensSelect');
-                    if (!isLens) {
-                        var prefix = getPrefixForSelect(selectId);
-                        if (prefix) {
-                            areaDataManager.applyToInputs(row, prefix);
-                        }
-                    }
+                    // 不再自动填充，由外部统一处理
                     hiddenSelect.value = JSON.stringify(row);
                     input.dataset.row = JSON.stringify(row);
                     var evt = new Event('change', { bubbles: true });
@@ -652,36 +365,24 @@ function initSearchSelect(wrapper, type) {
 }
 
 function initAllSearchSelects() {
-    var cameraWrappers = document.querySelectorAll('.search-select-wrapper:not([data-select-id$="lensSelect"])');
-    cameraWrappers.forEach(function (wrapper) {
-        initSearchSelect(wrapper, 'camera');
-    });
-    var lensWrappers = document.querySelectorAll('.search-select-wrapper[data-select-id$="lensSelect"]');
-    lensWrappers.forEach(function (wrapper) {
-        initSearchSelect(wrapper, 'lens');
-    });
-}
-
-function updateLensSearchSelects() {
-    if (!areaDataManager.isLoaded) return;
-    var items = areaDataManager.getLensItems();
-    var wrappers = document.querySelectorAll('.search-select-wrapper[data-select-id$="lensSelect"]');
-    wrappers.forEach(function (wrapper) {
-        if (wrapper.updateItems) {
-            wrapper.updateItems(items);
-        }
-    });
+    // 只初始化公共的相机和镜头选择器
+    var cameraWrapper = document.querySelector('[data-select-id="common-modelSelect"]');
+    if (cameraWrapper) initSearchSelect(cameraWrapper, 'camera');
+    var lensWrapper = document.querySelector('[data-select-id="common-lensSelect"]');
+    if (lensWrapper) initSearchSelect(lensWrapper, 'lens');
 }
 
 function updateAllSearchSelects() {
     if (!areaDataManager.isLoaded) return;
     var items = areaDataManager.getCameraItems();
-    var wrappers = document.querySelectorAll('.search-select-wrapper:not([data-select-id$="lensSelect"])');
-    wrappers.forEach(function (wrapper) {
-        if (wrapper.updateItems) {
-            wrapper.updateItems(items);
-        }
-    });
+    var wrapper = document.querySelector('[data-select-id="common-modelSelect"]');
+    if (wrapper && wrapper.updateItems) wrapper.updateItems(items);
+}
+function updateLensSearchSelects() {
+    if (!areaDataManager.isLoaded) return;
+    var items = areaDataManager.getLensItems();
+    var wrapper = document.querySelector('[data-select-id="common-lensSelect"]');
+    if (wrapper && wrapper.updateItems) wrapper.updateItems(items);
 }
 
 // ============================================================
@@ -705,140 +406,31 @@ document.querySelectorAll('.sub-tab-btn.level1').forEach(function (btn) {
 
 document.querySelectorAll('.sub-tab-btn.level2').forEach(function (btn) {
     btn.addEventListener('click', function () {
-        var parent = this.closest('.sub-tab-level2');
+        // 1. 切换激活状态
+        const parent = this.closest('.sub-tab-level2');
         parent.querySelectorAll('.sub-tab-btn.level2').forEach(function (b) { b.classList.remove('active'); });
         this.classList.add('active');
+
+        // 2. 更新当前子模块 ID
         currentSub = this.dataset.sub;
 
-        // -------- 控制输入显示 --------
-        document.getElementById('size-inputs').style.display = 'none';
-        document.getElementById('custom-inputs').style.display = 'none';
-        document.getElementById('spot-inputs').style.display = 'none';
-        document.getElementById('coax-inputs').style.display = 'none';
+        // 3. ⭐ 动态渲染输入框（取代所有 display:none 切换）
+        renderInputsForModule(currentSub);
 
-        if (currentSub === 'size-face' || currentSub === 'size-bar' || currentSub === 'size-ring' || currentSub === 'size-back') {
-            document.getElementById('size-inputs').style.display = 'grid';
-        } else if (currentSub === 'size-custom') {
-            document.getElementById('custom-inputs').style.display = 'grid';
-            updateArrangementOptions();
-        } else if (currentSub === 'spot-face' || currentSub === 'spot-ring') {
-            document.getElementById('spot-inputs').style.display = 'grid';
-        } else if (currentSub === 'spot-coax') {
-            document.getElementById('coax-inputs').style.display = 'grid';
-        }
-
-        if (currentSub === 'size-custom') {
-            document.querySelectorAll('.custom-item').forEach(function (el) {
-                el.classList.remove('hide-item');
-            });
-        } else {
-            document.querySelectorAll('.custom-item').forEach(function (el) {
-                el.classList.add('hide-item');
-            });
-        }
-
+        // 4. 切换结果区显示
         document.querySelectorAll('.sub-result').forEach(function (el) { el.style.display = 'none'; });
-        var target = document.querySelector('.sub-result-' + currentSub);
+        const target = document.querySelector('.sub-result-' + currentSub);
         if (target) target.style.display = 'block';
+
+        // 5. 清空旧结果，切换 3D 容器
         clearSubResults(currentSub);
         switchThreeContainer(currentSub);
+
+        // 6. （可选）触发公共计算器状态更新
+        console.log('🔁 切换到模块:', currentSub);
     });
 });
 
-// --- 切换3D容器 ---
-function switchThreeContainer(subId) {
-    var containerMap = {
-        'size-face': 'three-sf',
-        'size-bar': 'three-sb',
-        'size-ring': 'three-sr',
-        'size-custom': 'three-sc',
-        'size-back': 'three-bf',
-        'spot-face': 'three-spf',
-        'spot-coax': 'three-spc',
-        'spot-ring': 'three-spr'
-    };
-    var newContainerId = containerMap[subId] || 'three-sf';
-    if (activeContainerId === newContainerId) return;
-
-    var oldContainer = document.getElementById(activeContainerId);
-    var newContainer = document.getElementById(newContainerId);
-    if (!newContainer) return;
-
-    if (oldContainer && newContainer && threeRenderer) {
-        var rendererDom = threeRenderer.domElement;
-        var labelDom = labelRenderer.domElement;
-        if (rendererDom && rendererDom.parentNode === oldContainer) {
-            newContainer.appendChild(rendererDom);
-        }
-        if (labelDom && labelDom.parentNode === oldContainer) {
-            newContainer.appendChild(labelDom);
-        }
-        activeContainerId = newContainerId;
-
-        if (!newContainer._resizeObserver) {
-            var resizeObserver = new ResizeObserver(function () {
-                var currentContainer = document.getElementById(activeContainerId);
-                if (currentContainer) updateRendererSize(currentContainer);
-            });
-            resizeObserver.observe(newContainer);
-            newContainer._resizeObserver = resizeObserver;
-        }
-
-        var attempts = 0;
-        var maxAttempts = 5;
-        function tryUpdate() {
-            attempts++;
-            var width = newContainer.clientWidth || newContainer.offsetWidth;
-            var height = newContainer.clientHeight || newContainer.offsetHeight;
-            if ((width > 0 && height > 0) || attempts >= maxAttempts) {
-                updateRendererSize(newContainer);
-                return;
-            }
-            requestAnimationFrame(function () {
-                tryUpdate();
-            });
-        }
-        setTimeout(tryUpdate, 0);
-    }
-}
-
-// --- 尺寸更新函数 ---
-function updateRendererSize(container) {
-    if (!container) container = document.getElementById(activeContainerId);
-    if (!container) return;
-
-    var width = container.clientWidth || container.offsetWidth;
-    var height = container.clientHeight || container.offsetHeight;
-
-    if (width === 0 || height === 0) {
-        var rect = container.getBoundingClientRect();
-        width = rect.width || 800;
-        height = rect.height || 500;
-    }
-
-    if (width === 0 || height === 0) {
-        var parent = container.parentElement;
-        if (parent) {
-            width = parent.clientWidth || 800;
-            height = parent.clientHeight || 500;
-        }
-    }
-
-    width = Math.max(width, 1);
-    height = Math.max(height, 1);
-
-    if (threeRenderer) {
-        threeRenderer.setSize(width, height);
-        threeRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    }
-    if (labelRenderer) {
-        labelRenderer.setSize(width, height);
-    }
-    if (threeCamera) {
-        threeCamera.aspect = width / height;
-        threeCamera.updateProjectionMatrix();
-    }
-}
 
 // --- Excel文件数据更新 ---
 function updateAreaData() {
@@ -853,20 +445,30 @@ function updateAreaData() {
         statusSpan.textContent = '加载中...';
         statusSpan.style.color = '#ff9800';
     }
+
+    // 显示加载遮罩（如果存在）
+    var tip = document.getElementById('loadingTip');
+    if (tip) tip.classList.add('show');
+
     areaDataManager.loadExcel(file)
         .then(function () {
             if (statusSpan) {
                 statusSpan.textContent = areaDataManager.getVersionInfo();
                 statusSpan.style.color = '#4caf50';
             }
-            areaDataManager.populateSelect(document.getElementById('modelSelect'));
-            areaDataManager.populateSelect(document.getElementById('custom-modelSelect'));
-            areaDataManager.populateSelect(document.getElementById('spot-modelSelect'));
-            areaDataManager.populateSelect(document.getElementById('coax-modelSelect'));
             updateAllSearchSelects();
             updateLensSearchSelects();
             areaDataManager.saveToLocal();
             alert('数据更新成功！\n文件: ' + areaDataManager.fileName + '\n相机: ' + areaDataManager.cameraData.length + '条, 镜头: ' + areaDataManager.lensData.length + '条');
+
+            // ----- 修复：恢复界面可交互 -----
+            // 1. 隐藏加载遮罩
+            if (tip) tip.classList.remove('show');
+            // 2. 启用所有输入框（如果有被禁用的）
+            document.querySelectorAll('input, textarea, select, button').forEach(el => el.disabled = false);
+            // 3. 移除可能残留的覆盖层（如果有模态背景等）
+            document.querySelectorAll('.modal-backdrop, .overlay, .loading-mask').forEach(el => el.remove());
+            // 4. 确保动态输入区域可用（不需额外操作）
         })
         .catch(function (error) {
             if (statusSpan) {
@@ -874,9 +476,13 @@ function updateAreaData() {
                 statusSpan.style.color = '#f44336';
             }
             alert('数据加载失败: ' + error.message);
+
+            // 同样恢复界面
+            if (tip) tip.classList.remove('show');
+            document.querySelectorAll('input, textarea, select, button').forEach(el => el.disabled = false);
+            document.querySelectorAll('.modal-backdrop, .overlay, .loading-mask').forEach(el => el.remove());
         });
 }
-
 // 点击更新按钮 → 触发隐藏的文件选择框
 document.getElementById('updateDataBtn').addEventListener('click', function () {
     document.getElementById('fileUpload').click();
@@ -885,105 +491,52 @@ document.getElementById('updateDataBtn').addEventListener('click', function () {
 // 文件选择后自动加载
 document.getElementById('fileUpload').addEventListener('change', updateAreaData);
 
-// 隐藏select的change事件（保留兼容）
-document.getElementById('modelSelect').addEventListener('change', function () {
-    if (!this.value || !areaDataManager.isLoaded) return;
-    try {
-        var row = JSON.parse(this.value);
-    } catch (error) { }
-});
-
-document.getElementById('custom-modelSelect').addEventListener('change', function () {
-    if (!this.value || !areaDataManager.isLoaded) return;
-    try {
-        var row = JSON.parse(this.value);
-    } catch (error) { }
-});
-
-document.getElementById('spot-modelSelect').addEventListener('change', function () {
-    if (!this.value || !areaDataManager.isLoaded) return;
-    try {
-        var row = JSON.parse(this.value);
-    } catch (error) { }
-});
-
-document.getElementById('coax-modelSelect').addEventListener('change', function () {
-    if (!this.value || !areaDataManager.isLoaded) return;
-    try {
-        var row = JSON.parse(this.value);
-    } catch (error) { }
-});
 
 // --- 主工具切换 ---
 function switchTool(toolVal) {
+    var areaWrap = document.getElementById('areaWrap');
+    var lineWrap = document.getElementById('lineSelectorWrap');
+
     if (toolVal === 'area') {
+        // 显示面阵，隐藏镜头
+        if (areaWrap) {
+            areaWrap.style.display = 'flex';
+            areaWrap.style.flexDirection = 'row';
+            areaWrap.style.flexWrap = 'nowrap';
+        }
+        if (lineWrap) lineWrap.style.display = 'none';
+
         // 显示输入卡片和结果卡片
         document.getElementById('inputWrap').style.display = 'block';
         document.getElementById('resultCard').style.display = 'block';
 
-        // 恢复area相关显示
-        var areaItems = document.querySelectorAll('.area-item');
-        var lineItems = document.querySelectorAll('.line-item');
-        var inputWrap = document.getElementById('inputWrap');
-        inputWrap.classList.remove('line-scan-wrap');
-        areaItems.forEach(function (el) { el.classList.remove('hide-item'); });
-        lineItems.forEach(function (el) { el.classList.add('hide-item'); });
-        document.querySelector('.sub-tab-wrap').style.display = 'flex';
-        document.getElementById('line-inputs') && (document.getElementById('line-inputs').style.display = 'none');
+        // 根据当前模块动态渲染输入框
+        renderInputsForModule(currentSub);
 
+        // 刷新数据状态
         if (areaDataManager.isLoaded) {
             var statusSpan = document.getElementById('dataStatus');
             if (statusSpan) {
                 statusSpan.textContent = areaDataManager.getVersionInfo();
                 statusSpan.style.color = '#4caf50';
             }
-            areaDataManager.populateSelect(document.getElementById('modelSelect'));
-            areaDataManager.populateSelect(document.getElementById('custom-modelSelect'));
-            areaDataManager.populateSelect(document.getElementById('spot-modelSelect'));
-            areaDataManager.populateSelect(document.getElementById('coax-modelSelect'));
             updateAllSearchSelects();
             updateLensSearchSelects();
         }
 
-        // 根据当前子选项卡显示对应的输入组
-        document.getElementById('size-inputs').style.display = 'none';
-        document.getElementById('custom-inputs').style.display = 'none';
-        document.getElementById('spot-inputs').style.display = 'none';
-        document.getElementById('coax-inputs').style.display = 'none';
-
-        if (currentSub === 'size-face' || currentSub === 'size-bar' || currentSub === 'size-ring' || currentSub === 'size-back') {
-            document.getElementById('size-inputs').style.display = 'grid';
-        } else if (currentSub === 'size-custom') {
-            document.getElementById('custom-inputs').style.display = 'grid';
-            updateArrangementOptions();
-        } else if (currentSub === 'spot-face' || currentSub === 'spot-ring') {
-            document.getElementById('spot-inputs').style.display = 'grid';
-        } else if (currentSub === 'spot-coax') {
-            document.getElementById('coax-inputs').style.display = 'grid';
-        }
-
+        // 显示对应的结果区域
         document.querySelectorAll('.sub-result').forEach(function (el) { el.style.display = 'none'; });
         var target = document.querySelector('.sub-result-' + currentSub);
         if (target) target.style.display = 'block';
         clearSubResults(currentSub);
         switchThreeContainer(currentSub);
-        document.getElementById('resultCard').style.display = 'block';
 
-        document.querySelectorAll('.coax-item').forEach(function (el) {
-            el.classList.add('hide-item');
-        });
-
-        if (currentSub === 'size-custom') {
-            document.querySelectorAll('.custom-item').forEach(function (el) {
-                el.classList.remove('hide-item');
-            });
-        } else {
-            document.querySelectorAll('.custom-item').forEach(function (el) {
-                el.classList.add('hide-item');
-            });
-        }
     } else {
-        // 线扫模式：隐藏输入和结果卡片，页面空白
+        // 显示镜头，隐藏面阵
+        if (areaWrap) areaWrap.style.display = 'none';
+        if (lineWrap) lineWrap.style.display = 'block';
+
+        // 隐藏输入和结果卡片
         document.getElementById('inputWrap').style.display = 'none';
         document.getElementById('resultCard').style.display = 'none';
     }
@@ -1025,86 +578,7 @@ function updateArrangementOptions() {
     });
 }
 
-document.getElementById('customCameraCount').addEventListener('change', function () {
-    updateArrangementOptions();
-});
 
-// --- Three.js 初始化 ---
-function initThreeScene() {
-    var container = document.getElementById(activeContainerId);
-    if (!container) {
-        console.warn('初始容器未找到，使用 three-sf');
-        container = document.getElementById('three-sf');
-        if (!container) return;
-    }
-
-    threeScene = new THREE.Scene();
-    threeScene.background = new THREE.Color(0x1a1a2e);
-
-    threeCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 2000);
-    threeCamera.position.set(500, 300, 500);
-    threeCamera.lookAt(0, 0, 200);
-
-    threeRenderer = new THREE.WebGLRenderer({ antialias: true });
-    threeRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    container.appendChild(threeRenderer.domElement);
-
-    labelRenderer = new THREE.CSS2DRenderer();
-    labelRenderer.domElement.style.position = 'absolute';
-    labelRenderer.domElement.style.top = '0';
-    labelRenderer.domElement.style.left = '0';
-    labelRenderer.domElement.style.width = '100%';
-    labelRenderer.domElement.style.height = '100%';
-    labelRenderer.domElement.style.pointerEvents = 'none';
-    labelRenderer.domElement.style.background = 'transparent';
-    container.appendChild(labelRenderer.domElement);
-
-    threeControls = new THREE.OrbitControls(threeCamera, threeRenderer.domElement);
-    threeControls.enableDamping = true;
-    threeControls.dampingFactor = 0.05;
-    threeControls.target.set(0, 0, 200);
-    threeControls.zoomToCursor = true;
-
-    var ambientLight = new THREE.AmbientLight(0x404060);
-    threeScene.add(ambientLight);
-    var dirLight = new THREE.DirectionalLight(0xffffff, 1);
-    dirLight.position.set(1, 2, 1);
-    threeScene.add(dirLight);
-    var backLight = new THREE.DirectionalLight(0xffffff, 0.5);
-    backLight.position.set(-1, 0, -1);
-    threeScene.add(backLight);
-
-    updateRendererSize(container);
-
-    if (window.ResizeObserver) {
-        var resizeObserver = new ResizeObserver(function () {
-            var currentContainer = document.getElementById(activeContainerId);
-            if (currentContainer) updateRendererSize(currentContainer);
-        });
-        resizeObserver.observe(container);
-        container._resizeObserver = resizeObserver;
-    } else {
-        window.addEventListener('resize', function () {
-            var currentContainer = document.getElementById(activeContainerId);
-            if (currentContainer) updateRendererSize(currentContainer);
-        });
-    }
-
-    animateThree();
-
-    console.log('Three.js 场景初始化成功（带 ResizeObserver）');
-}
-
-function animateThree() {
-    requestAnimationFrame(animateThree);
-    if (threeControls) threeControls.update();
-    if (threeRenderer && threeScene && threeCamera) {
-        threeRenderer.render(threeScene, threeCamera);
-    }
-    if (labelRenderer && threeScene && threeCamera) {
-        labelRenderer.render(threeScene, threeCamera);
-    }
-}
 
 // --- 2D绘图辅助 ---
 /**
@@ -1549,596 +1023,155 @@ function drawSpotRect(ctx, canvas, width, height) {
     ctx.fillText(height.toFixed(1) + ' mm', dimX + 5, offY + rh / 2);
 }
 
-// --- 3D场景更新 ---
-function updateThreeScene(fovH, fovV, fovD, wReal, hReal, wLight, hLight, dCam, dLight, sw, sh, f) {
-    console.log('updateThreeScene 被调用');
+// ============================================================
+//  策略模式：计算策略集合
+//  每个策略接收 (params) 返回 { result, threeParams }
+// ============================================================
+const calcStrategies = {
+    /**
+     * 标准策略：平面同轴、条光、背光、光斑-平面同轴、光斑-环光
+     * 计算视场角 + 光源尺寸
+     */
+    standard: function (params) {
+        const { cameraRow, lensRow, dCam, dLight, sw, sh, config } = params;
+        const formulaKey = areaDataManager.lensColumnMap.formula || '计算公式';
+        const formula = lensRow[formulaKey] || '';
+        if (!formula) { alert('所选镜头未配置计算公式'); return null; }
 
-    loadExternalModels();
+        let fn;
+        try { fn = new Function('WD', 'CMOS', 'return (' + formula + ');'); }
+        catch (e) { alert('计算公式语法错误: ' + e.message); return null; }
 
-    if (threeScene) {
-        var toRemove = [];
-        threeScene.children.forEach(function (child) {
-            if (child.type !== 'AmbientLight' && child.type !== 'DirectionalLight' &&
-                child.type !== 'GridHelper' && child.type !== 'AxesHelper' &&
-                child.type !== 'PerspectiveCamera' && child.type !== 'Scene' &&
-                !child.userData.isModel) {
-                toRemove.push(child);
+        const fovW = fn(dCam, sw);
+        const fovH = fn(dCam, sh);
+        if (isNaN(fovW) || isNaN(fovH) || fovW <= 0 || fovH <= 0) {
+            alert('计算出的视野无效，请检查公式或输入值');
+            return null;
+        }
+
+        const fovH_angle = rad2deg(2 * Math.atan(fovW / (2 * dCam)));
+        const fovV_angle = rad2deg(2 * Math.atan(fovH / (2 * dCam)));
+        const fovD_angle = rad2deg(2 * Math.atan(Math.hypot(fovW, fovH) / (2 * dCam)));
+        const wLight = fovW * (dCam + dLight) / dCam;
+        const hLight = fovH * (dCam + dLight) / dCam;
+
+        const result = {
+            fovH: fovH_angle.toFixed(1) + ' °',
+            fovV: fovV_angle.toFixed(1) + ' °',
+            fovD: fovD_angle.toFixed(1) + ' °',
+            sizeText: fovW.toFixed(1) + ' mm × ' + fovH.toFixed(1) + ' mm'
+        };
+
+        // 根据模块特有字段
+        const sub = config.id || currentSub;
+        if (sub === 'size-face' || sub === 'size-bar' || sub === 'size-back' ||
+            sub === 'size-coax' || sub === 'size-dome') {
+            result.lightW = wLight.toFixed(1) + ' mm';
+            result.lightH = hLight.toFixed(1) + ' mm';
+        } else if (sub === 'spot-face' || sub === 'spot-ring') {
+            result.spotText = wLight.toFixed(1) + ' mm × ' + hLight.toFixed(1) + ' mm';
+        }
+
+        return {
+            result: result,
+            threeParams: { fovH_angle, fovV_angle, fovD_angle, fovW, fovH, wLight, hLight, dCam, dLight, sw, sh }
+        };
+    },
+
+    /**
+     * 环光策略：尺寸-环光
+     * 增加内外径计算
+     */
+    ring: function (params) {
+        const base = calcStrategies.standard(params);
+        if (!base) return null;
+
+        const { fovW, fovH, dCam, dLight } = base.threeParams;
+        const fovD_len = Math.hypot(fovW, fovH);
+        const innerDiam = Math.max(0, fovD_len * (dCam - dLight) / dCam);
+        const outerDiam = fovD_len * (dCam + dLight) / dCam;
+
+        base.result.innerDiam = innerDiam.toFixed(1) + ' mm';
+        base.result.outerDiam = outerDiam.toFixed(1) + ' mm';
+
+        return base;
+    },
+
+    /**
+     * 定制面光策略
+     * 多相机阵列 + 开孔 + 画布绘制
+     */
+    custom: function (params) {
+        const base = calcStrategies.standard(params);
+        if (!base) return null;
+
+        const { fovW, fovH, dCam, dLight, sw, sh } = base.threeParams;
+        const customCameraCount = params.customCameraCount || 1;
+        const arrangementVal = params.arrangementVal || '';
+        const holeSize = params.holeSize || 0;
+
+        let rows = 1, cols = 1;
+        if (arrangementVal) {
+            try {
+                const obj = JSON.parse(arrangementVal);
+                rows = obj.rows || 1;
+                cols = obj.cols || 1;
+            } catch (e) {
+                rows = 1;
+                cols = customCameraCount;
             }
-        });
-        toRemove.forEach(function (child) {
-            threeScene.remove(child);
-            if (child.geometry) child.geometry.dispose();
-            if (child.material) child.material.dispose();
-        });
-    }
-
-    labelObjects.forEach(function (obj) {
-        if (threeScene) threeScene.remove(obj);
-    });
-    labelObjects = [];
-
-    if (!wReal || !hReal || !dCam) {
-        console.warn('无效数据，跳过 3D 更新');
-        return;
-    }
-
-    function addRect(ptsArray, color, dashed) {
-        var points = ptsArray.concat(ptsArray[0]);
-        var geom = new THREE.BufferGeometry().setFromPoints(points);
-        var mat;
-        if (dashed) {
-            mat = new THREE.LineDashedMaterial({ color: color, dashSize: 8, gapSize: 6 });
         } else {
-            mat = new THREE.LineBasicMaterial({ color: color });
-        }
-        var line = new THREE.Line(geom, mat);
-        if (dashed) line.computeLineDistances();
-        threeScene.add(line);
-    }
-
-    function addLine(p1, p2, color, dashed) {
-        var points = [p1, p2];
-        var geom = new THREE.BufferGeometry().setFromPoints(points);
-        var mat;
-        if (dashed) {
-            mat = new THREE.LineDashedMaterial({ color: color, dashSize: 6, gapSize: 5 });
-        } else {
-            mat = new THREE.LineBasicMaterial({ color: color });
-        }
-        var line = new THREE.Line(geom, mat);
-        if (dashed) line.computeLineDistances();
-        threeScene.add(line);
-    }
-
-    var halfW = wReal / 2, halfH = hReal / 2, zCam = dCam;
-    var halfLW = wLight / 2, halfLH = hLight / 2, zLight = dCam + dLight;
-    var pts = [
-        new THREE.Vector3(-halfW, -halfH, zCam),
-        new THREE.Vector3(halfW, -halfH, zCam),
-        new THREE.Vector3(halfW, halfH, zCam),
-        new THREE.Vector3(-halfW, halfH, zCam)
-    ];
-    var isRing = (currentSub === 'size-ring' || currentSub === 'spot-ring');
-    var isBackLight = (currentSub === 'size-back');
-
-    var origin = new THREE.Vector3(0, 0, 0);
-    for (var i = 0; i < 4; i++) addLine(origin, pts[i], 0x88ccff, false);
-    addRect(pts, 0xffaa00, false);
-
-    if (isRing) {
-        var fovD_len = Math.hypot(wReal, hReal);
-
-        // 计算在工件平面（Z = dCam）上的投影直径
-        // 注意：光源位于 Z = dCam + dLight，投影到 Z = dCam 平面时，需要缩放
-        // 但由于我们在 Z = dCam - dLight 处绘制投影圆（视锥截面），
-        // 实际上我们想要的是光源在视野平面上的投影大小。
-        // 正确公式：投影直径 = 视野对角线 * (dCam + dLight) / dCam
-        var outerDiam = fovD_len * (dCam + dLight) / dCam;
-        var innerDiam = fovD_len * (dCam - dLight) / dCam;
-
-        if (innerDiam < 0) innerDiam = 0;
-        var outerRadius = outerDiam / 2;
-        var innerRadius = innerDiam / 2;
-
-        function addCircle(center, radius, color, dashed) {
-            var segments = 40;
-            var points = [];
-            for (var i = 0; i <= segments; i++) {
-                var theta = (i / segments) * Math.PI * 2;
-                var x = center.x + radius * Math.cos(theta);
-                var y = center.y + radius * Math.sin(theta);
-                var z = center.z;
-                points.push(new THREE.Vector3(x, y, z));
-            }
-            var geom = new THREE.BufferGeometry().setFromPoints(points);
-            var mat;
-            if (dashed) {
-                mat = new THREE.LineDashedMaterial({ color: color, dashSize: 6, gapSize: 5 });
-            } else {
-                mat = new THREE.LineBasicMaterial({ color: color });
-            }
-            var line = new THREE.Line(geom, mat);
-            if (dashed) line.computeLineDistances();
-            threeScene.add(line);
+            rows = 1;
+            cols = customCameraCount;
         }
 
-        var projZ = dCam - dLight;
-        if (projZ < 0) projZ = 0;
-        var centerProj = new THREE.Vector3(0, 0, projZ);
-        addCircle(centerProj, outerRadius, 0xff3300, true);
-        if (innerRadius > 0.1) {
-            addCircle(centerProj, innerRadius, 0xff3300, true);
-        }
-    } else {
-        var ptsLight = [
-            new THREE.Vector3(-halfLW, -halfLH, zLight),
-            new THREE.Vector3(halfLW, -halfLH, zLight),
-            new THREE.Vector3(halfLW, halfLH, zLight),
-            new THREE.Vector3(-halfLW, halfLH, zLight)
-        ];
-        for (var i = 0; i < 4; i++) {
-            addLine(pts[i], ptsLight[i], 0xff8800, true);
-        }
+        const overlap = dLight;
+        const totalW = cols * fovW - (cols - 1) * overlap;
+        const totalH = rows * fovH - (rows - 1) * overlap;
+        const lightW = totalW + fovW;
+        const lightH = totalH + fovH;
 
-        if (isBackLight) {
-            if (lightModel) {
-                threeScene.remove(lightModel);
-                lightModel = null;
-            }
+        base.result.lightW = lightW.toFixed(1) + ' mm';
+        base.result.lightH = lightH.toFixed(1) + ' mm';
+        base.result.totalSize = totalW.toFixed(1) + ' mm × ' + totalH.toFixed(1) + ' mm';
 
-            var reqZ = zLight;
-            console.log('🔦 加载光源模型，目标位置 Z:', reqZ);
+        // 保存画布参数，供外部绘制
+        base._canvasParams = { lightW, lightH, holeSize, rows, cols, overlap, fovW, fovH };
 
-            gltfLoader.load(
-                'models/light.glb',
-                function (gltf) {
-                    var model = gltf.scene;
-                    model.updateMatrixWorld(true);
+        return base;
+    },
 
-                    var box = new THREE.Box3().setFromObject(model);
-                    var size = box.getSize(new THREE.Vector3());
+    /**
+     * 同轴光策略
+     * 特殊逻辑：传感器 + 发光区 + 光斑投影
+     */
+    coax: function (params) {
+        const { cameraRow, lensRow, dCam, dLight, sw, sh, manualLightLen, manualLightWid } = params;
 
-                    var group = new THREE.Group();
-                    group.position.set(-53, -200, zLight + 10);
-
-                    var scaleX = (wLight * 1.2) / size.x;
-                    var scaleY = (hLight * 1.2) / size.z;
-                    var scaleZ = 1;
-                    group.scale.set(scaleX, scaleY, scaleZ);
-
-                    group.position.set(
-                        -53 * group.scale.x,
-                        -200 * group.scale.y,
-                        zLight + 10
-                    );
-                    group.add(model);
-
-                    threeScene.add(group);
-                    lightModel = group;
-                    window.lightGroup = group;
-                    window.lightModelRaw = model;
-                },
-                undefined,
-                function (error) {
-                    console.error('❌ 光源模型加载失败', error);
-                    addRect(ptsLight, 0xff3300, true);
-                }
-            );
-        } else {
-            addRect(ptsLight, 0xff3300, true);
-            if (lightModel) {
-                threeScene.remove(lightModel);
-                lightModel = null;
-            }
-        }
-
-        if (!isBackLight) {
-            var projZ = dCam - dLight;
-            if (projZ < 0) projZ = 0;
-            var projPts = [
-                new THREE.Vector3(-halfLW, -halfLH, projZ),
-                new THREE.Vector3(halfLW, -halfLH, projZ),
-                new THREE.Vector3(halfLW, halfLH, projZ),
-                new THREE.Vector3(-halfLW, halfLH, projZ)
-            ];
-            addRect(projPts, 0xff3300, true);
-            for (var i = 0; i < 4; i++) {
-                addLine(ptsLight[i], projPts[i], 0xff3300, true);
-            }
-        }
-    }
-
-    function createLabel(text, position, colorClass) {
-        var div = document.createElement('div');
-        div.className = 'label-3d';
-        div.innerHTML = text;
-        if (colorClass) {
-            var valueSpan = div.querySelector('.label-value');
-            if (valueSpan) valueSpan.className = 'label-value ' + colorClass;
-        }
-        var label = new THREE.CSS2DObject(div);
-        label.position.copy(position);
-        threeScene.add(label);
-        labelObjects.push(label);
-        return label;
-    }
-
-    var offsetField = Math.max(40, hReal * 0.25) + 20;
-    var offsetLight = Math.max(35, hLight * 0.2);
-    var offsetProj = Math.max(30, hLight * 0.15) - 5;
-
-    var fieldText = '<span class="label-title">📷 视野</span><br>' +
-        '<span class="label-value field">' + wReal.toFixed(1) + ' × ' + hReal.toFixed(1) + ' mm</span>';
-    createLabel(fieldText, new THREE.Vector3(-wReal * 1.1, halfH + offsetField + 50, dCam));
-
-    var isRing = (currentSub === 'size-ring' || currentSub === 'spot-ring');
-    var innerDiam, outerDiam;
-    if (isRing) {
-        var diagSensor = Math.hypot(sw, sh);
-        innerDiam = diagSensor * (dCam - dLight) / f;
-        outerDiam = diagSensor * (dCam + dLight) / f;
-        if (innerDiam < 0) innerDiam = 0;
-    }
-
-    if (!isRing) {
-        var lightText = '<span class="label-title">💡 光源</span><br>' +
-            '<span class="label-value light">' + wLight.toFixed(1) + ' × ' + hLight.toFixed(1) + ' mm</span>';
-        createLabel(lightText, new THREE.Vector3(-wLight, -halfLH + -offsetLight, zLight));
-    }
-
-    var projLabelText;
-    if (!isBackLight) {
-        if (isRing) {
-            projLabelText = '<span class="label-title">⬇️ 环形投影</span><br>' +
-                '<span class="label-value light">内径：' + innerDiam.toFixed(2) + ' mm</span> &nbsp;|&nbsp; ' +
-                '<span class="label-value light">外径：' + outerDiam.toFixed(2) + ' mm</span>';
-        } else {
-            projLabelText = '<span class="label-title">⬇️ 光源投影</span><br>' +
-                '<span class="label-value light">' + wLight.toFixed(1) + ' × ' + hLight.toFixed(1) + ' mm</span>';
-        }
-        createLabel(projLabelText, new THREE.Vector3(-wLight, 0, projZ));
-    }
-
-    var centerZ = (dCam + dLight - 80) / 2;
-    threeControls.target.set(0, 0, centerZ);
-
-    var offsetY = dCam + dLight + 200;
-    var offsetZ = 0;
-    threeCamera.position.set(0, centerZ + offsetY, centerZ + offsetZ);
-
-    threeCamera.lookAt(0, 0, centerZ);
-    threeControls.update();
-
-    console.log('3D 场景更新完成');
-}
-
-/**
- * 同轴光3D场景绘制
- */
-function updateThreeSceneCoax(spotW, spotH, camDist, lightDist, lightLen, lightWid, fovH, fovV, fovD, wReal, hReal, skipSphere) {
-
-    loadExternalModels();
-    coaxDragParams = {
-        spotW, spotH, camDist, lightDist, lightLen, lightWid,
-        fovH, fovV, fovD, wReal, hReal,
-        hasSensor: (wReal !== null && wReal > 0 && hReal !== null && hReal > 0)
-    };
-
-    if (threeScene) {
-        var toRemove = [];
-        threeScene.children.forEach(function (child) {
-            if (child === draggableSphere) return;
-            if (child === coaxDistLabel) return;
-            if (child.type !== 'AmbientLight' && child.type !== 'DirectionalLight' &&
-                child.type !== 'GridHelper' && child.type !== 'AxesHelper' &&
-                child.type !== 'PerspectiveCamera' && child.type !== 'Scene' &&
-                !child.userData.isModel) {
-                toRemove.push(child);
-            }
-        });
-        toRemove.forEach(function (child) {
-            threeScene.remove(child);
-            if (child.geometry) child.geometry.dispose();
-            if (child.material) child.material.dispose();
-        });
-        coaxSceneObjects = [];
-    }
-
-    function addRect(ptsArray, color, dashed) {
-        var points = ptsArray.concat(ptsArray[0]);
-        var geom = new THREE.BufferGeometry().setFromPoints(points);
-        var mat = dashed ? new THREE.LineDashedMaterial({ color: color, dashSize: 8, gapSize: 6 })
-            : new THREE.LineBasicMaterial({ color: color });
-        var line = new THREE.Line(geom, mat);
-        if (dashed) line.computeLineDistances();
-        threeScene.add(line);
-        coaxSceneObjects.push(line);
-        return line;
-    }
-
-    function addLine(p1, p2, color, dashed) {
-        var points = [p1, p2];
-        var geom = new THREE.BufferGeometry().setFromPoints(points);
-        var mat = dashed ? new THREE.LineDashedMaterial({ color: color, dashSize: 6, gapSize: 5 })
-            : new THREE.LineBasicMaterial({ color: color });
-        var line = new THREE.Line(geom, mat);
-        if (dashed) line.computeLineDistances();
-        threeScene.add(line);
-        coaxSceneObjects.push(line);
-        return line;
-    }
-
-    function createLabel(text, position) {
-        var div = document.createElement('div');
-        div.className = 'label-3d';
-        div.innerHTML = text;
-        var label = new THREE.CSS2DObject(div);
-        label.position.copy(position);
-        threeScene.add(label);
-        coaxSceneObjects.push(label);
-        labelObjects.push(label);
-        return label;
-    }
-
-    var origin = new THREE.Vector3(0, 0, 0);
-    var zWork = camDist;
-    var zLight = camDist - lightDist;
-    if (zLight < 0) zLight = 0;
-
-    var hasSensor = (wReal !== null && hReal !== null && wReal > 0 && hReal > 0);
-    var coneW = hasSensor ? wReal : spotW;
-    var coneH = hasSensor ? hReal : spotH;
-    var halfConeW = coneW / 2,
-        halfConeH = coneH / 2;
-    var ptsCone = [
-        new THREE.Vector3(-halfConeW, -halfConeH, zWork),
-        new THREE.Vector3(halfConeW, -halfConeH, zWork),
-        new THREE.Vector3(halfConeW, halfConeH, zWork),
-        new THREE.Vector3(-halfConeW, halfConeH, zWork)
-    ];
-    for (var i = 0; i < 4; i++) {
-        addLine(origin, ptsCone[i], 0x88ccff, false);
-    }
-    addRect(ptsCone, 0x00aaff, false);
-
-    var offsetField = Math.max(40, Math.max(hReal, spotH) * 0.25) + 20;
-    var offsetSpot = Math.max(35, spotH * 0.2);
-    var offsetLight = Math.max(30, lightWid * 0.15) - 5;
-
-    if (hasSensor) {
-        var fieldText = '<span class="label-title">📷 视野</span><br>' +
-            '<span class="label-value field">' + wReal.toFixed(1) + ' × ' + hReal.toFixed(1) + ' mm</span>';
-        createLabel(fieldText, new THREE.Vector3(-wReal, halfConeH + offsetField + 50, zWork));
-    }
-
-    var halfLL = lightLen / 2,
-        halfLW = lightWid / 2;
-    var ptsLight = [
-        new THREE.Vector3(-halfLL, -halfLW, zLight),
-        new THREE.Vector3(halfLL, -halfLW, zLight),
-        new THREE.Vector3(halfLL, halfLW, zLight),
-        new THREE.Vector3(-halfLL, halfLW, zLight)
-    ];
-    addRect(ptsLight, 0xff8800, true);
-
-    var halfSW = spotW / 2,
-        halfSH = spotH / 2;
-    var ptsSpot = [
-        new THREE.Vector3(-halfSW, -halfSH, zWork),
-        new THREE.Vector3(halfSW, -halfSH, zWork),
-        new THREE.Vector3(halfSW, halfSH, zWork),
-        new THREE.Vector3(-halfSW, halfSH, zWork)
-    ];
-    addRect(ptsSpot, 0x00ff88, true);
-
-    var spotGeometry = new THREE.BufferGeometry();
-    var vertices = [
-        -halfSW, -halfSH, zWork,
-        halfSW, -halfSH, zWork,
-        halfSW, halfSH, zWork,
-        -halfSW, -halfSH, zWork,
-        halfSW, halfSH, zWork,
-        -halfSW, halfSH, zWork
-    ];
-    spotGeometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-    spotGeometry.computeVertexNormals();
-    var spotMaterial = new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: 0.15,
-        side: THREE.DoubleSide,
-        depthWrite: false
-    });
-    var spotMesh = new THREE.Mesh(spotGeometry, spotMaterial);
-    threeScene.add(spotMesh);
-    coaxSceneObjects.push(spotMesh);
-
-    for (var i = 0; i < 4; i++) {
-        addLine(ptsLight[i], ptsSpot[i], 0xffaa44, true);
-    }
-
-    var spotText = '<span class="label-title">💡 有效光斑</span><br>' +
-        '<span class="label-value field">' + spotW.toFixed(1) + ' × ' + spotH.toFixed(1) + ' mm</span>';
-    createLabel(spotText, new THREE.Vector3(-spotW - 50, -halfSH + -offsetSpot, (zWork - 30)));
-
-    var lightText = '<span class="label-title">💡 发光区</span><br>' +
-        '<span class="label-value light">' + lightLen.toFixed(1) + ' × ' + lightWid.toFixed(1) + ' mm</span>';
-    createLabel(lightText, new THREE.Vector3(-lightLen, 0, zLight));
-
-    if (!skipSphere) {
-        var targetZ = zWork * 0.5;
-        var camY = (1.4 * camDist) + 350;
-        var camZ = 50 + 0.5 * camDist;
-
-        threeControls.target.set(0, 0, targetZ);
-        threeCamera.position.set(0, camY, camZ);
-        threeCamera.lookAt(0, 0, targetZ);
-        threeControls.update();
-    }
-}
-
-// 初始化同轴光拖拽功能
-function initCoaxDrag() {
-    if (draggableSphere) {
-        threeScene.remove(draggableSphere);
-        draggableSphere = null;
-    }
-    if (dragControls) {
-        dragControls.dispose();
-        dragControls = null;
-    }
-    if (coaxDistLabel) {
-        threeScene.remove(coaxDistLabel);
-        coaxDistLabel = null;
-    }
-
-    var params = coaxDragParams;
-    if (!params) return;
-    var zLight = params.camDist - params.lightDist;
-    if (zLight < 0) zLight = 0;
-
-    var sphereGeom = new THREE.SphereGeometry(8, 32, 32);
-    var sphereMat = new THREE.MeshStandardMaterial({
-        color: 0xff2200,
-        emissive: 0xff2200,
-        emissiveIntensity: 0.3,
-    });
-    draggableSphere = new THREE.Mesh(sphereGeom, sphereMat);
-    draggableSphere.position.set(0, 0, zLight);
-    threeScene.add(draggableSphere);
-
-    var labelDiv = document.createElement('div');
-    labelDiv.className = 'label-3d';
-    labelDiv.style.background = 'rgba(255,50,0,0.7)';
-    labelDiv.style.color = '#fff';
-    labelDiv.id = 'coax-dist-label';
-    labelDiv.textContent = '光源距离: ' + params.lightDist.toFixed(1) + ' mm';
-    coaxDistLabel = new THREE.CSS2DObject(labelDiv);
-    coaxDistLabel.position.set(-150, -100, -80);
-    threeScene.add(coaxDistLabel);
-
-    dragControls = new THREE.DragControls([draggableSphere], threeCamera, threeRenderer.domElement);
-    dragControls.addEventListener('dragstart', function () {
-        threeControls.enabled = false;
-    });
-    dragControls.addEventListener('drag', onCoaxDrag);
-    dragControls.addEventListener('dragend', function () {
-        threeControls.enabled = true;
-    });
-}
-
-function onCoaxDrag(event) {
-    var pos = event.object.position;
-    pos.x = 0;
-    pos.y = 0;
-    var minZ = 0.1,
-        maxZ = coaxDragParams.camDist;
-    if (pos.z < minZ) pos.z = minZ;
-    if (pos.z > maxZ) pos.z = maxZ;
-
-    var newDLight = coaxDragParams.camDist - pos.z;
-    if (newDLight < 0) newDLight = 0;
-
-    document.getElementById('coax-distLight').value = newDLight.toFixed(1);
-
-    coaxDragParams.lightDist = newDLight;
-    if (coaxDistLabel) {
-        coaxDistLabel.element.textContent = '光源距离: ' + newDLight.toFixed(1) + ' mm';
-    }
-    var scale = coaxDragParams.camDist / (coaxDragParams.camDist + newDLight);
-    var newSpotW = (coaxDragParams.lightLen * scale) * 1.2;
-    var newSpotH = (coaxDragParams.lightWid * scale) * 1.2;
-
-    document.getElementById('spcSpotText').innerHTML = newSpotW.toFixed(2) + ' mm × ' + newSpotH.toFixed(2) + ' mm';
-
-    updateThreeSceneCoax(
-        newSpotW, newSpotH,
-        coaxDragParams.camDist,
-        newDLight,
-        coaxDragParams.lightLen,
-        coaxDragParams.lightWid,
-        coaxDragParams.fovH,
-        coaxDragParams.fovV,
-        coaxDragParams.fovD,
-        coaxDragParams.wReal,
-        coaxDragParams.hReal,
-        true
-    );
-}
-
-// --- 计算主函数 ---
-function calculate() {
-    var activeBtn = document.querySelector('.tool-toggle-btn.active');
-    var tool = activeBtn.dataset.tool;
-
-    if (tool === 'line') {
-        alert('线扫功能已移除');
-        return;
-    }
-
-    document.getElementById('resultCard').style.display = 'block';
-
-    if (currentSub === 'spot-coax') {
-        clearThreeScene();
-        coaxSceneObjects = [];
-        coaxDragParams = null;
-        var sw = parseFloat(document.getElementById('coax-senW').value);
-        var sh = parseFloat(document.getElementById('coax-senH').value);
-        var dCam = parseFloat(document.getElementById('coax-distCam').value);
-        var dLight = parseFloat(document.getElementById('coax-distLight').value);
-        var manualLightLen = parseFloat(document.getElementById('coax-lightLen').value);
-        var manualLightWid = parseFloat(document.getElementById('coax-lightWid').value);
-
-        if (isNaN(dCam) || isNaN(dLight) || dCam <= 0 || dLight <= 0) {
-            alert('相机工作距离和光源工作距离必须为大于0的数字');
-            return;
-        }
-
-        var hasSensor = !(isNaN(sw) || isNaN(sh) || sw <= 0 || sh <= 0);
-        var hasManualLight = !(isNaN(manualLightLen) || isNaN(manualLightWid) || manualLightLen <= 0 || manualLightWid <= 0);
+        const hasSensor = (sw > 0 && sh > 0 && lensRow !== null);
+        const hasManualLight = !(isNaN(manualLightLen) || isNaN(manualLightWid) || manualLightLen <= 0 || manualLightWid <= 0);
 
         if (!hasSensor && !hasManualLight) {
             alert('请提供完整的传感器参数（长边、短边）或手动输入发光区尺寸（长边、短边）');
-            return;
+            return null;
         }
 
-        var lightLen, lightWid;
-        var fovW, fovH, wReal, hReal, fovH_angle, fovV_angle, fovD_angle;
+        let lightLen, lightWid, fovW, fovH, wReal, hReal, fovH_angle, fovV_angle, fovD_angle;
 
         if (hasSensor) {
-            var lensSelect = document.getElementById('coax-lensSelect');
-            var lensRow = null;
-            if (lensSelect && lensSelect.value) {
-                lensRow = JSON.parse(lensSelect.value);
-            } else {
-                // 备选：从搜索输入框的 dataset 读取
-                var searchInput = document.getElementById('coax-lensSearch');
-                if (searchInput && searchInput.dataset.row) {
-                    lensRow = JSON.parse(searchInput.dataset.row);
-                }
-            }
-            if (!lensRow) {
-                alert('请从下拉列表中选择镜头型号（不能仅输入文字）');
-                return;
-            }
-            var formulaKey = areaDataManager.lensColumnMap.formula || '计算公式';
-            var formula = lensRow[formulaKey] || '';
-            if (!formula) {
-                alert('所选镜头未配置计算公式');
-                return;
-            }
-            var fn;
-            try {
-                fn = new Function('WD', 'CMOS', 'return (' + formula + ');');
-            } catch (e) {
-                alert('计算公式语法错误: ' + e.message);
-                return;
-            }
+            const formulaKey = areaDataManager.lensColumnMap.formula || '计算公式';
+            const formula = lensRow[formulaKey] || '';
+            if (!formula) { alert('所选镜头未配置计算公式'); return null; }
+
+            let fn;
+            try { fn = new Function('WD', 'CMOS', 'return (' + formula + ');'); }
+            catch (e) { alert('计算公式语法错误: ' + e.message); return null; }
+
             fovW = fn(dCam, sw);
             fovH = fn(dCam, sh);
             if (isNaN(fovW) || isNaN(fovH) || fovW <= 0 || fovH <= 0) {
                 alert('计算出的视野无效');
-                return;
+                return null;
             }
             wReal = fovW;
             hReal = fovH;
@@ -2159,298 +1192,303 @@ function calculate() {
             wReal = null; hReal = null;
         }
 
-        var scale = dCam / (dCam + dLight);
-        var spotW = (lightLen * scale) * 1.2;
-        var spotH = (lightWid * scale) * 1.2;
+        const scale = dCam / (dCam + dLight);
+        const spotW = (lightLen * scale) * 1.2;
+        const spotH = (lightWid * scale) * 1.2;
 
-        document.getElementById('spcFovH').innerText = (fovH_angle !== undefined) ? fovH_angle.toFixed(2) + ' °' : '--';
-        document.getElementById('spcFovV').innerText = (fovV_angle !== undefined) ? fovV_angle.toFixed(2) + ' °' : '--';
-        document.getElementById('spcFovD').innerText = (fovD_angle !== undefined) ? fovD_angle.toFixed(2) + ' °' : '--';
-        document.getElementById('spcSizeText').innerText = (wReal !== null && hReal !== null) ? wReal.toFixed(2) + ' mm × ' + hReal.toFixed(2) + ' mm' : '--';
-        document.getElementById('spcLightText').innerText = lightLen.toFixed(2) + ' mm × ' + lightWid.toFixed(2) + ' mm';
-        document.getElementById('spcSpotText').innerText = spotW.toFixed(2) + ' mm × ' + spotH.toFixed(2) + ' mm';
+        const result = {
+            fovH: (fovH_angle !== undefined) ? fovH_angle.toFixed(1) + ' °' : '--',
+            fovV: (fovV_angle !== undefined) ? fovV_angle.toFixed(1) + ' °' : '--',
+            fovD: (fovD_angle !== undefined) ? fovD_angle.toFixed(1) + ' °' : '--',
+            sizeText: (wReal !== null && hReal !== null) ? wReal.toFixed(1) + ' mm × ' + hReal.toFixed(1) + ' mm' : '--',
+            lightText: lightLen.toFixed(1) + ' mm × ' + lightWid.toFixed(1) + ' mm',
+            spotText: spotW.toFixed(1) + ' mm × ' + spotH.toFixed(1) + ' mm'
+        };
 
-        updateThreeSceneCoax(spotW, spotH, dCam, dLight, lightLen, lightWid, fovH_angle, fovV_angle, fovD_angle, wReal, hReal);
-        initCoaxDrag();
+        return {
+            result: result,
+            threeParams: { spotW, spotH, dCam, dLight, lightLen, lightWid, fovH_angle, fovV_angle, fovD_angle, wReal, hReal },
+            isCoax: true
+        };
+    }
+};
+
+
+// --- 计算主函数（策略模式版） ---
+function calculate() {
+    var activeBtn = document.querySelector('.tool-toggle-btn.active');
+    var tool = activeBtn.dataset.tool;
+
+    if (tool === 'line') {
+        alert('线扫功能已移除');
         return;
     }
 
-    var prefix = '';
-    if (currentSub === 'size-face' || currentSub === 'size-bar' || currentSub === 'size-ring' || currentSub === 'size-back') {
-        prefix = 'size-';
-    } else if (currentSub === 'size-custom') {
-        prefix = 'custom-';
-    } else if (currentSub === 'spot-face' || currentSub === 'spot-ring') {
-        prefix = 'spot-';
+    document.getElementById('resultCard').style.display = 'block';
+
+    // ===== 1. 获取配置 =====
+    const config = getCurrentModuleConfig();
+    if (!config) {
+        alert('未找到当前模块配置');
+        return;
+    }
+    console.log('📦 当前模块配置:', config.label, config);
+
+    // ===== 2. 收集输入 =====
+    const inputs = collectInputsForCurrentModule();
+    console.log('📥 收集到的输入:', inputs);
+
+    // ===== 3. 获取相机和镜头行数据 =====
+    var cameraSelect = document.getElementById('common-modelSelect');
+    var cameraRow = null;
+    if (cameraSelect && cameraSelect.value) {
+        try { cameraRow = JSON.parse(cameraSelect.value); } catch (e) { }
     } else {
-        alert('未知的计算模式');
-        return;
+        var camSearch = document.getElementById('common-modelSelectSearch');
+        if (camSearch && camSearch.dataset.row) {
+            try { cameraRow = JSON.parse(camSearch.dataset.row); } catch (e) { }
+        }
+    }
+    var lensSelect = document.getElementById('common-lensSelect');
+    var lensRow = null;
+    if (lensSelect && lensSelect.value) {
+        try { lensRow = JSON.parse(lensSelect.value); } catch (e) { }
+    } else {
+        var lensSearch = document.getElementById('common-lensSearch');
+        if (lensSearch && lensSearch.dataset.row) {
+            try { lensRow = JSON.parse(lensSearch.dataset.row); } catch (e) { }
+        }
     }
 
-    var sw = parseFloat(document.getElementById(prefix + 'senW').value);
-    var sh = parseFloat(document.getElementById(prefix + 'senH').value);
-    var dCam = parseFloat(document.getElementById(prefix + 'distCam').value);
-    var dLight = parseFloat(document.getElementById(prefix + 'distLight').value);
+    // ===== 4. 准备策略参数 =====
+    // 从相机行读取传感器尺寸
+    var sw = parseFloat(cameraRow && cameraRow['传感器长边']) || 0;
+    var sh = parseFloat(cameraRow && cameraRow['传感器短边']) || 0;
 
-    if (currentSub === 'size-custom') {
+    // 获取工作距离（不同模块的输入 ID 不同，使用配置中的 inputs）
+    var dCam = 0, dLight = 0;
+    config.inputs.forEach(input => {
+        if (input.id.endsWith('distCam')) {
+            dCam = parseFloat(document.getElementById(input.id)?.value) || 0;
+        }
+        if (input.id.endsWith('distLight')) {
+            dLight = parseFloat(document.getElementById(input.id)?.value) || 0;
+        }
+    });
+
+    // 同轴光特殊：需要手动发光区尺寸
+    var manualLightLen = 0, manualLightWid = 0;
+    if (config.calcType === 'coax') {
+        manualLightLen = parseFloat(document.getElementById('coax-lightLen')?.value) || 0;
+        manualLightWid = parseFloat(document.getElementById('coax-lightWid')?.value) || 0;
+        if (isNaN(dCam) || isNaN(dLight) || dCam <= 0 || dLight <= 0) {
+            alert('相机工作距离和光源工作距离必须为大于0的数字');
+            return;
+        }
+    }
+
+    // 定制面光特殊：需要相机个数、排列、开孔尺寸
+    var customCameraCount = 1, arrangementVal = '', holeSize = 0;
+    if (config.calcType === 'custom') {
+        customCameraCount = parseFloat(document.getElementById('customCameraCount')?.value) || 1;
+        arrangementVal = document.getElementById('arrangementSelect')?.value || '';
+        holeSize = parseFloat(document.getElementById('customHoleSize')?.value) || 0;
         if (isNaN(dLight) || dLight < 0) dLight = 0;
     }
 
-    if (isNaN(sw) || isNaN(sh) || isNaN(dCam) || sw <= 0 || sh <= 0 || dCam <= 0) {
-        alert('传感器长边、短边、相机工作距离必须为大于0的数字');
+    // 验证：非同轴光必须有相机和镜头
+    if (config.calcType !== 'coax') {
+        if (!cameraRow) { alert('请选择相机型号'); return; }
+        if (!lensRow) { alert('请选择镜头型号'); return; }
+        if (sw <= 0 || sh <= 0 || isNaN(dCam) || dCam <= 0) {
+            alert('传感器数据缺失或相机工作距离无效，请确认相机型号已选且数据完整');
+            return;
+        }
+    }
+
+    // ===== 5. 构建参数对象 =====
+    const params = {
+        config: config,
+        cameraRow: cameraRow,
+        lensRow: lensRow,
+        dCam: dCam,
+        dLight: dLight,
+        sw: sw,
+        sh: sh,
+        manualLightLen: manualLightLen,
+        manualLightWid: manualLightWid,
+        customCameraCount: customCameraCount,
+        arrangementVal: arrangementVal,
+        holeSize: holeSize
+    };
+
+    // ===== 6. 执行策略 =====
+    const strategy = calcStrategies[config.calcType];
+    if (!strategy) {
+        alert('未知的计算类型: ' + config.calcType);
         return;
     }
 
-    var lensSelectId = prefix + 'lensSelect';
-    var lensSelect = document.getElementById(lensSelectId);
-    var lensRow = null;
+    const resultData = strategy(params);
+    if (!resultData) return;
 
-    if (lensSelect && lensSelect.value) {
-        lensRow = JSON.parse(lensSelect.value);
+    // ===== 7. 渲染结果 =====
+    renderResultsForCurrentModule(resultData.result);
+
+
+    // 更新公共预览
+    const common = {
+        fovH: document.getElementById('commonFovH'),
+        fovV: document.getElementById('commonFovV'),
+        fovD: document.getElementById('commonFovD'),
+        sizeText: document.getElementById('commonSizeText')
+    };
+    if (resultData.result) {
+        common.fovH.innerText = resultData.result.fovH || '--';
+        common.fovV.innerText = resultData.result.fovV || '--';
+        common.fovD.innerText = resultData.result.fovD || '--';
+        common.sizeText.innerText = resultData.result.sizeText || '--';
+    }
+
+    // ===== 8. 3D 场景更新 =====
+    if (resultData.isCoax) {
+        // 同轴光 3D
+        const tp = resultData.threeParams;
+        clearThreeScene();
+        coaxSceneObjects = [];
+        coaxDragParams = null;
+        updateThreeSceneCoax(tp.spotW, tp.spotH, tp.dCam, tp.dLight, tp.lightLen, tp.lightWid,
+            tp.fovH_angle, tp.fovV_angle, tp.fovD_angle, tp.wReal, tp.hReal);
+        initCoaxDrag();
     } else {
-        var searchInputId = prefix + 'lensSearch';
-        var searchInput = document.getElementById(searchInputId);
-        if (searchInput && searchInput.dataset.row) {
-            lensRow = JSON.parse(searchInput.dataset.row);
-        }
+        // 常规 3D
+        const tp = resultData.threeParams;
+        updateThreeScene(tp.fovH_angle, tp.fovV_angle, tp.fovD_angle, tp.fovW, tp.fovH,
+            tp.wLight, tp.hLight, tp.dCam, tp.dLight, tp.sw, tp.sh);
     }
 
-    if (!lensRow) {
-        alert('请选择镜头型号');
-        return;
+    // ===== 9. 定制面光画布绘制 =====
+    if (resultData._canvasParams) {
+        const cp = resultData._canvasParams;
+        const scCtxTotal = document.getElementById('scCanTotal').getContext('2d');
+        drawTotalRect(scCtxTotal, document.getElementById('scCanTotal'),
+            cp.lightW, cp.lightH, cp.holeSize, cp.rows, cp.cols, cp.overlap, cp.fovW, cp.fovH);
     }
-    var formulaKey = areaDataManager.lensColumnMap.formula || '计算公式';
-    var formula = lensRow[formulaKey] || '';
-    if (!formula) {
-        alert('所选镜头未配置计算公式，请检查 Excel 中的“计算公式”列');
-        return;
-    }
-    var fn;
-    try {
-        fn = new Function('WD', 'CMOS', 'return (' + formula + ');');
-    } catch (e) {
-        alert('计算公式语法错误: ' + e.message);
-        return;
-    }
-    var fovW = fn(dCam, sw);
-    var fovH = fn(dCam, sh);
-    if (isNaN(fovW) || isNaN(fovH) || fovW <= 0 || fovH <= 0) {
-        alert('计算出的视野无效，请检查公式或输入值');
-        return;
-    }
-    var fovH_angle = rad2deg(2 * Math.atan(fovW / (2 * dCam)));
-    var fovV_angle = rad2deg(2 * Math.atan(fovH / (2 * dCam)));
-    var fovD_angle = rad2deg(2 * Math.atan(Math.hypot(fovW, fovH) / (2 * dCam)));
-    var wLight = fovW * (dCam + dLight) / dCam;
-    var hLight = fovH * (dCam + dLight) / dCam;
-
-    if (currentSub === 'size-face') {
-        document.getElementById('sfFovH').innerText = fovH_angle.toFixed(2) + ' °';
-        document.getElementById('sfFovV').innerText = fovV_angle.toFixed(2) + ' °';
-        document.getElementById('sfFovD').innerText = fovD_angle.toFixed(2) + ' °';
-        document.getElementById('sfSizeText').innerText = fovW.toFixed(2) + ' mm × ' + fovH.toFixed(2) + ' mm';
-        document.getElementById('sfLightW').innerText = wLight.toFixed(2) + ' mm';
-        document.getElementById('sfLightH').innerText = hLight.toFixed(2) + ' mm';
-    } else if (currentSub === 'size-bar') {
-        document.getElementById('sbFovH').innerText = fovH_angle.toFixed(2) + ' °';
-        document.getElementById('sbFovV').innerText = fovV_angle.toFixed(2) + ' °';
-        document.getElementById('sbFovD').innerText = fovD_angle.toFixed(2) + ' °';
-        document.getElementById('sbSizeText').innerText = fovW.toFixed(2) + ' mm × ' + fovH.toFixed(2) + ' mm';
-        document.getElementById('sbLightW').innerText = wLight.toFixed(2) + ' mm';
-        document.getElementById('sbLightH').innerText = hLight.toFixed(2) + ' mm';
-    } else if (currentSub === 'size-ring') {
-        document.getElementById('srFovH').innerText = fovH_angle.toFixed(2) + ' °';
-        document.getElementById('srFovV').innerText = fovV_angle.toFixed(2) + ' °';
-        document.getElementById('srFovD').innerText = fovD_angle.toFixed(2) + ' °';
-        document.getElementById('srSizeText').innerText = fovW.toFixed(2) + ' mm × ' + fovH.toFixed(2) + ' mm';
-        var fovD_len = Math.hypot(fovW, fovH);
-        var innerDiam = Math.max(0, fovD_len * (dCam - dLight) / dCam);
-        var outerDiam = fovD_len * (dCam + dLight) / dCam;
-        document.getElementById('srInnerDiam').innerText = innerDiam.toFixed(2) + ' mm';
-        document.getElementById('srOuterDiam').innerText = outerDiam.toFixed(2) + ' mm';
-    } else if (currentSub === 'size-custom') {
-        var customCameraCount = parseFloat(document.getElementById('customCameraCount').value) || 1;
-        var arrangementSelect = document.getElementById('arrangementSelect');
-        var arrangementVal = arrangementSelect.value;
-        var rows = 1, cols = 1;
-        if (arrangementVal) {
-            try {
-                var obj = JSON.parse(arrangementVal);
-                rows = obj.rows || 1;
-                cols = obj.cols || 1;
-            } catch (e) {
-                rows = 1;
-                cols = customCameraCount;
-            }
-        } else {
-            rows = 1;
-            cols = customCameraCount;
-        }
-
-        var overlap = dLight;
-        var holeSize = parseFloat(document.getElementById('customHoleSize').value) || 0;
-
-        var totalW = cols * fovW - (cols - 1) * overlap;
-        var totalH = rows * fovH - (rows - 1) * overlap;
-        var lightW = totalW + fovW;
-        var lightH = totalH + fovH;
-
-        document.getElementById('scFovH').innerText = fovH_angle.toFixed(2) + ' °';
-        document.getElementById('scFovV').innerText = fovV_angle.toFixed(2) + ' °';
-        document.getElementById('scFovD').innerText = fovD_angle.toFixed(2) + ' °';
-        document.getElementById('scSizeText').innerText = fovW.toFixed(2) + ' mm × ' + fovH.toFixed(2) + ' mm';
-        document.getElementById('scLightW').innerText = lightW.toFixed(2) + ' mm';
-        document.getElementById('scLightH').innerText = lightH.toFixed(2) + ' mm';
-        document.getElementById('scTotalSize').innerText = totalW.toFixed(2) + ' mm × ' + totalH.toFixed(2) + ' mm';
-
-        var scCtxTotal = document.getElementById('scCanTotal').getContext('2d');
-        drawTotalRect(scCtxTotal, document.getElementById('scCanTotal'), lightW, lightH, holeSize, rows, cols, overlap, fovW, fovH);
-    } else if (currentSub === 'size-back') {
-        document.getElementById('bfFovH').innerText = fovH_angle.toFixed(2) + ' °';
-        document.getElementById('bfFovV').innerText = fovV_angle.toFixed(2) + ' °';
-        document.getElementById('bfFovD').innerText = fovD_angle.toFixed(2) + ' °';
-        document.getElementById('bfSizeText').innerText = fovW.toFixed(2) + ' mm × ' + fovH.toFixed(2) + ' mm';
-        document.getElementById('bfLightW').innerText = wLight.toFixed(2) + ' mm';
-        document.getElementById('bfLightH').innerText = hLight.toFixed(2) + ' mm';
-    } else if (currentSub === 'spot-face') {
-        document.getElementById('spfFovH').innerText = fovH_angle.toFixed(2) + ' °';
-        document.getElementById('spfFovV').innerText = fovV_angle.toFixed(2) + ' °';
-        document.getElementById('spfFovD').innerText = fovD_angle.toFixed(2) + ' °';
-        document.getElementById('spfSizeText').innerText = fovW.toFixed(2) + ' mm × ' + fovH.toFixed(2) + ' mm';
-        document.getElementById('spfSpotText').innerText = wLight.toFixed(2) + ' mm × ' + hLight.toFixed(2) + ' mm';
-    } else if (currentSub === 'spot-ring') {
-        document.getElementById('sprFovH').innerText = fovH_angle.toFixed(2) + ' °';
-        document.getElementById('sprFovV').innerText = fovV_angle.toFixed(2) + ' °';
-        document.getElementById('sprFovD').innerText = fovD_angle.toFixed(2) + ' °';
-        document.getElementById('sprSizeText').innerText = fovW.toFixed(2) + ' mm × ' + fovH.toFixed(2) + ' mm';
-        document.getElementById('sprSpotText').innerText = wLight.toFixed(2) + ' mm × ' + hLight.toFixed(2) + ' mm';
-    }
-
-    updateThreeScene(fovH_angle, fovV_angle, fovD_angle, fovW, fovH, wLight, hLight, dCam, dLight, sw, sh, dCam);
 }
+
 
 // --- 重置 ---
 function resetAll() {
-    var inputs = document.querySelectorAll('input');
-    for (var i = 0; i < inputs.length; i++) {
-        inputs[i].value = '';
-    }
-
-    document.getElementById('sfFovH').innerText = '--';
-    document.getElementById('sfFovV').innerText = '--';
-    document.getElementById('sfFovD').innerText = '--';
-    document.getElementById('sfSizeText').innerText = '--';
-    document.getElementById('sfLightW').innerText = '--';
-    document.getElementById('sfLightH').innerText = '--';
-
-    document.getElementById('sbFovH').innerText = '--';
-    document.getElementById('sbFovV').innerText = '--';
-    document.getElementById('sbFovD').innerText = '--';
-    document.getElementById('sbSizeText').innerText = '--';
-    document.getElementById('sbLightW').innerText = '--';
-    document.getElementById('sbLightH').innerText = '--';
-
-    document.getElementById('bfFovH').innerText = '--';
-    document.getElementById('bfFovV').innerText = '--';
-    document.getElementById('bfFovD').innerText = '--';
-    document.getElementById('bfSizeText').innerText = '--';
-    document.getElementById('bfLightW').innerText = '--';
-    document.getElementById('bfLightH').innerText = '--';
-
-    document.getElementById('spfFovH').innerText = '--';
-    document.getElementById('spfFovV').innerText = '--';
-    document.getElementById('spfFovD').innerText = '--';
-    document.getElementById('spfSizeText').innerText = '--';
-    document.getElementById('spfSpotText').innerText = '--';
-
-    document.getElementById('sprFovH').innerText = '--';
-    document.getElementById('sprFovV').innerText = '--';
-    document.getElementById('sprFovD').innerText = '--';
-    document.getElementById('sprSizeText').innerText = '--';
-    document.getElementById('sprSpotText').innerText = '--';
-
-    document.getElementById('spcFovH').innerText = '--';
-    document.getElementById('spcFovV').innerText = '--';
-    document.getElementById('spcFovD').innerText = '--';
-    document.getElementById('spcSizeText').innerText = '--';
-    document.getElementById('spcLightText').innerText = '--';
-    document.getElementById('spcSpotText').innerText = '--';
-
-    document.getElementById('coax-senW').value = '';
-    document.getElementById('coax-senH').value = '';
-    document.getElementById('coax-distCam').value = '';
-    document.getElementById('coax-distLight').value = '';
-    document.getElementById('coax-lightLen').value = '';
-    document.getElementById('coax-lightWid').value = '';
-
-    if (dragControls) {
-        dragControls.dispose();
-        dragControls = null;
-    }
-    if (draggableSphere) {
-        threeScene.remove(draggableSphere);
-        draggableSphere = null;
-    }
-    coaxSceneObjects = [];
-    coaxDragParams = null;
-
-    document.getElementById('size-senW').value = '';
-    document.getElementById('size-senH').value = '';
-
-    document.getElementById('spot-lightLen').value = '';
-    document.getElementById('spot-lightWid').value = '';
-
-    document.getElementById('srFovH').innerText = '--';
-    document.getElementById('srFovV').innerText = '--';
-    document.getElementById('srFovD').innerText = '--';
-    document.getElementById('srSizeText').innerText = '--';
-    document.getElementById('srInnerDiam').innerText = '--';
-    document.getElementById('srOuterDiam').innerText = '--';
-
-    document.getElementById('scFovH').innerText = '--';
-    document.getElementById('scFovV').innerText = '--';
-    document.getElementById('scFovD').innerText = '--';
-    document.getElementById('scSizeText').innerText = '--';
-    document.getElementById('scLightW').innerText = '--';
-    document.getElementById('scLightH').innerText = '--';
-    document.getElementById('scTotalSize').innerText = '--';
-
+    document.querySelectorAll('input').forEach(el => el.value = '');
+    clearSubResults(currentSub);
     document.getElementById('resultCard').style.display = 'none';
+    document.getElementById('commonFovH').innerText = '--';
+    document.getElementById('commonFovV').innerText = '--';
+    document.getElementById('commonFovD').innerText = '--';
+    document.getElementById('commonSizeText').innerText = '--';
 
-    var allCanvases = document.querySelectorAll('canvas');
-    allCanvases.forEach(function (c) {
-        var ctx = c.getContext('2d');
-        ctx.clearRect(0, 0, c.width, c.height);
-        c.width = 800;
-        c.height = 200;
-        c.style.width = '';
-        c.style.height = '';
-    });
-
-    if (threeScene) {
-        var toRemove = [];
-        threeScene.children.forEach(function (child) {
-            if (child.type !== 'AmbientLight' && child.type !== 'DirectionalLight' &&
-                child.type !== 'GridHelper' && child.type !== 'AxesHelper' &&
-                child.type !== 'PerspectiveCamera' && child.type !== 'Scene') {
-                toRemove.push(child);
+    // 清空所有 2D Canvas（跳过 WebGL Canvas）
+    document.querySelectorAll('canvas').forEach(c => {
+        try {
+            const ctx = c.getContext('2d');
+            if (ctx) {
+                ctx.clearRect(0, 0, c.width, c.height);
+                c.width = 800;
+                c.height = 200;
             }
-        });
-        toRemove.forEach(function (child) {
-            threeScene.remove(child);
-            if (child.geometry) child.geometry.dispose();
-            if (child.material) child.material.dispose();
-        });
-    }
-    labelObjects.forEach(function (obj) {
-        if (threeScene) threeScene.remove(obj);
+        } catch (e) {
+            // 忽略非 2D Canvas 或异常
+        }
     });
-    labelObjects = [];
 }
 
 // --- 页面初始化 ---
 window.onload = function () {
+
+    // 1. 尝试从用户数据目录加载（仅当在 nw.js 环境中）
+    let dataLoaded = false;
+    if (typeof require !== 'undefined' && typeof nw !== 'undefined') {
+        try {
+            // 即使文件不存在，loadFromFile 会返回 false
+            dataLoaded = areaDataManager.loadFromFile();
+            if (dataLoaded) {
+                console.log('✅ 从用户数据目录加载数据成功');
+            }
+        } catch (e) {
+            console.warn('加载用户数据文件失败:', e.message);
+        }
+    }
+
+    // 2. 如果文件加载失败，尝试从 localStorage 恢复
+    if (!dataLoaded) {
+        const hasCache = areaDataManager.loadFromLocal();
+        if (hasCache) {
+            dataLoaded = true;
+            console.log('✅ 从 localStorage 恢复数据成功');
+        }
+    }
+
+    // 3. 更新界面状态（与之前相同）
+    const statusSpan = document.getElementById('dataStatus');
+    if (dataLoaded) {
+        if (statusSpan) {
+            statusSpan.textContent = '✅ 已加载: ' + areaDataManager.getVersionInfo();
+            statusSpan.style.color = '#4caf50';
+        }
+        // 填充下拉选择器
+        updateAllSearchSelects();
+        updateLensSearchSelects();
+        if (window.lineSelector && typeof window.lineSelector.onDataUpdated === 'function') {
+            window.lineSelector.onDataUpdated();
+        }
+        document.getElementById('loadingTip').classList.remove('show');
+    } else {
+        if (statusSpan) {
+            statusSpan.textContent = '⚠️ 未找到数据文件，请上传 Excel';
+            statusSpan.style.color = '#ff9800';
+        }
+        const tip = document.getElementById('loadingTip');
+        tip.classList.add('show');
+        tip.innerHTML = '📂 请点击「更新数据」按钮上传 Excel 文件（支持 .xlsx / .xls）';
+        tip.style.color = '#ff9800';
+    }
+
+    // 初始化模块配置系统（打印已注册的模块）
+    if (window.MODULES_CONFIG) {
+        console.log('✅ 模块配置系统已加载，共注册 ' + Object.keys(window.MODULES_CONFIG.modules).length + ' 个模块');
+        console.log('   📋 模块列表:', Object.keys(window.MODULES_CONFIG.modules).join(', '));
+    } else {
+        console.warn('⚠️ 未找到 MODULES_CONFIG，请检查 modules-config.js 是否加载');
+    }
+
+
     initAllSearchSelects();
+
+    // 公共相机选择后，自动填充所有子模块的传感器输入
+    document.getElementById('common-modelSelect').addEventListener('change', function () {
+        if (!this.value) return;
+        try {
+            var row = JSON.parse(this.value);
+            console.log('选中的相机数据:', row); // 便于调试
+
+            // 直接从 row 中提取传感器长边和短边（使用已知列名）
+            var senW = row['传感器长边'];   // 根据你的实际列名，可能与映射一致
+            var senH = row['传感器短边'];
+            console.log('传感器长边:', senW, '短边:', senH);
+
+            // 遍历所有子模块前缀，填充对应的输入框
+            var prefixes = ['size-', 'custom-', 'spot-', 'coax-'];
+            for (var i = 0; i < prefixes.length; i++) {
+                var prefix = prefixes[i];
+                var elW = document.getElementById(prefix + 'senW');
+                var elH = document.getElementById(prefix + 'senH');
+                if (elW) elW.value = (senW !== undefined && senW !== null) ? senW : '';
+                if (elH) elH.value = (senH !== undefined && senH !== null) ? senH : '';
+            }
+        } catch (e) {
+            console.warn('填充传感器失败:', e);
+        }
+    });
 
     const hasCache = areaDataManager.loadFromLocal();
     if (hasCache) {
@@ -2459,10 +1497,6 @@ window.onload = function () {
             statusSpan.textContent = areaDataManager.getVersionInfo();
             statusSpan.style.color = '#4caf50';
         }
-        areaDataManager.populateSelect(document.getElementById('modelSelect'));
-        areaDataManager.populateSelect(document.getElementById('custom-modelSelect'));
-        areaDataManager.populateSelect(document.getElementById('spot-modelSelect'));
-        areaDataManager.populateSelect(document.getElementById('coax-modelSelect'));
         updateAllSearchSelects();
         updateLensSearchSelects();
     }
@@ -2491,7 +1525,20 @@ window.onload = function () {
         var container = document.getElementById(activeContainerId);
         if (container) updateRendererSize(container);
     }, 100);
+
+    // 页面加载后，根据当前激活的按钮显示对应模块
+    var activeBtn = document.querySelector('.tool-toggle-btn.active');
+    if (activeBtn) {
+        switchTool(activeBtn.dataset.tool);
+    }
 };
+
+// ---- 初始化：根据当前激活的子模块渲染输入框 ----
+// 默认激活的是 'size-face'（由 HTML 初始状态决定）
+const defaultSub = 'size-face';
+renderInputsForModule(defaultSub);
+console.log('✅ 初始输入渲染完成，模块:', defaultSub);
+
 
 setTimeout(function () {
     var tip = document.getElementById('loadingTip');
