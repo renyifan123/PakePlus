@@ -4,6 +4,7 @@
     margin: 0;
     padding: 0;
 }
+
 /* ===== 总样式 ===== */
 body {
     max-width: 100%;
@@ -181,7 +182,11 @@ body {
 }
 
 .sub-tab-level2 {
-    margin-left: 24px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    /* 行间距8px，列间距10px */
+    padding: 4px 0;
 }
 
 .sub-tab-btn {
@@ -206,6 +211,10 @@ body {
 }
 
 .sub-tab-btn.level2 {
+    flex: 0 0 auto;
+    /* 不拉伸，宽度由内容决定 */
+    white-space: nowrap;
+    /* 文本不换行，按钮保持一行 */
     background: #f0f2f5;
     font-size: 14px;
     padding: 6px 16px;
@@ -348,18 +357,8 @@ body {
     background: #e5e6eb;
 }
 
-.result-top-row {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 16px;
-    margin-bottom: 16px;
-}
 
-.result-bottom-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-}
+
 
 .result-card {
     background: #f7f8fa;
@@ -374,13 +373,13 @@ body {
 }
 
 .card-label {
-    font-size: 16px;
+    font-size: 20px;
     color: #6b7785;
     margin-bottom: 12px;
 }
 
 .card-value {
-    font-size: 38px;
+    font-size: 20px;
     font-weight: 700;
 }
 
@@ -427,7 +426,8 @@ canvas {
 #resultCard {
     flex: 1;
     overflow: auto;
-    min-width: 0;   /* 防止 flex 溢出 */
+    min-width: 0;
+    /* 防止 flex 溢出 */
 }
 
 .canvas-gap {
@@ -470,19 +470,9 @@ canvas {
     display: none;
 }
 
-.three-container {
-    width: 100%;
-    height: 700px;
-    border-radius: 12px;
-    overflow: hidden;
-    background: #1a1a2e;
-    cursor: grab;
-    position: relative;
-}
 
-.three-container:active {
-    cursor: grabbing;
-}
+
+
 
 /* 3D 文字标签 */
 .label-3d {
@@ -539,22 +529,23 @@ canvas {
     .area-wrap {
         flex-direction: column;
     }
+
     #inputWrap {
         flex: 1 1 auto;
         width: 100%;
     }
+
     #resultCard {
         flex: 1 1 auto;
         width: 100%;
     }
 }
 
-/* 合并视场角卡片占一行 */
-/* 视场角卡片 – 占一半宽度，内部左右排列 */
 .result-top-row-single {
     display: flex;
     margin-bottom: 16px;
 }
+
 .result-top-row-single .result-card {
     flex: 0 0 50%;
     max-width: 50%;
@@ -566,19 +557,22 @@ canvas {
     align-items: center;
     gap: 6px;
 }
-.result-top-row-single .result-card > div {
+
+.result-top-row-single .result-card>div {
     display: flex;
     align-items: center;
     gap: 6px;
     white-space: nowrap;
 }
+
 .result-top-row-single .card-label {
     margin: 0;
-    font-size: 14px;
+    font-size: 18px;
     color: #6b7785;
 }
+
 .result-top-row-single .card-value {
-    font-size: 18px !important;
+    font-size: 25px !important;
     font-weight: 700;
 }
 
@@ -611,4 +605,299 @@ canvas {
 
 .card-subtitle-wrap .update-btn:hover {
     background: #e0e8ff;
+}
+
+.hidden-panel {
+    display: none !important;
+}
+
+
+/* ===== 新增结果卡片布局样式（替代内联） ===== */
+.result-top-row {
+    display: flex;
+    gap: 16px;
+    align-items: stretch;
+    margin-bottom: 16px;
+}
+
+.result-top-row .result-card {
+    flex: 1;
+    padding: 16px 20px;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+}
+
+/* 视场角卡片（三个数值） */
+.result-top-row .fov-card {
+    flex: 2;
+    justify-content: space-around;
+}
+
+/* 视野尺寸卡片（标签+值水平排列） */
+.result-top-row .size-card {
+    flex: 1;
+    flex-direction: row;
+    justify-content: center;
+    gap: 8px;
+    background: #f8faff;
+}
+
+.result-top-row .size-card .card-label {
+    font-size: 15px;
+    color: #1d2129;
+    font-weight: 500;
+    margin: 0;
+}
+
+.result-top-row .size-card .card-value {
+    font-size: 24px;
+    font-weight: 600;
+    color: #772299;
+}
+
+/* 底部一行（光源尺寸/光斑等） */
+.result-bottom-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+}
+
+.result-bottom-row .result-card {
+    flex: 1;
+    padding: 10px 12px;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    min-width: 180px;
+}
+
+.result-bottom-row .result-card .card-label {
+    font-size: 12px;
+    color: #8c95a6;
+    margin-bottom: 6px;
+}
+
+.result-bottom-row .result-card .card-value {
+    font-size: 16px;
+    font-weight: 600;
+    color: #1d2129;
+}
+
+/* 定制面光的总视野占整行 */
+.result-bottom-row .full-width {
+    flex: 0 0 100%;
+}
+
+/* 视场角数值颜色（保留） */
+.fov-blue {
+    color: #0055ff;
+}
+
+.fov-green {
+    color: #009933;
+}
+
+.fov-red {
+    color: #ff4400;
+}
+
+.size-purple {
+    color: #772299;
+}
+
+.light-red {
+    color: #c82423;
+}
+
+.light-cyan {
+    color: #0088cc;
+}
+
+.total-purple {
+    color: #aa66cc;
+}
+
+/* ---- 结果区视场角行 6:4 比例 ---- */
+/* 三个视场角占6份，视野尺寸占4份 */
+.result-top-row-single .result-card:first-child {
+    flex: 0 0 60% !important;
+    max-width: 60% !important;
+}
+
+.result-top-row-single .result-card:last-child {
+    flex: 0 0 40% !important;
+    max-width: 40% !important;
+}
+
+/* 窄屏下堆叠显示 */
+@media (max-width: 600px) {
+    .result-top-row-single {
+        flex-direction: column;
+    }
+
+    .result-top-row-single .result-card:first-child,
+    .result-top-row-single .result-card:last-child {
+        flex: 0 0 100% !important;
+        max-width: 100% !important;
+    }
+}
+
+/* Three.js 容器样式统一（可保留内联，这里也提供类） */
+.three-container {
+    aspect-ratio: 16 / 9;
+    min-height: 300px;
+    max-height: 70vh;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #1a1a2e;
+    margin-top: 12px;
+}
+
+.three-container:active {
+    cursor: grabbing;
+}
+
+/* 定制面光的画布 */
+.canvas-block {
+    margin-top: 20px;
+}
+
+.canvas-block h4 {
+    margin: 0 0 10px 0;
+    color: #1d2129;
+}
+
+.canvas-block canvas {
+    width: 100%;
+    height: 600px;
+    min-height: 500px;
+    border-radius: 12px;
+    background: #fafafa;
+}
+
+.sub-result .result-top-row {
+    display: none;
+}
+
+/* 光源尺寸卡片 - 强制水平排列并统一高度 */
+.result-card.light-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 12px;
+    flex-wrap: nowrap;
+    min-width: 280px;
+}
+
+/* 覆盖通用 .result-bottom-row .card-label 的 margin-bottom */
+.result-card.light-card .card-label {
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.4;
+    margin-bottom: 0;
+    /* ← 关键：移除底部边距 */
+    white-space: nowrap;
+}
+
+/* 数值组及内部 span 统一 */
+.result-card.light-card .card-value,
+.result-card.light-card .card-value span {
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.4;
+    white-space: nowrap;
+}
+
+/* 数值组水平排列 */
+.result-card.light-card .card-value {
+    display: flex;
+    gap: 16px;
+    flex-wrap: nowrap;
+    align-items: center;
+    color: #c82423;
+}
+
+/* 预览卡片样式 */
+/* 预览卡片 */
+.preview-card {
+    background: #fff;
+    border-radius: 16px;
+    padding: 12px 16px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+}
+
+.preview-card .preview-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #4e5969;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.preview-card .preview-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    font-size: 14px;
+    color: #1d2129;
+}
+
+.preview-card .preview-items strong {
+    font-weight: 600;
+    margin-left: 2px;
+}
+
+#leftPanel .card {
+    margin-bottom: 0;
+}
+
+
+
+/* 3D容器需作为定位父元素 */
+.three-container {
+    position: relative;
+}
+
+/* 右上角视图工具栏 - 垂直排列 */
+.view-toolbar {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    /* ← 竖向排列 */
+    gap: 6px;
+    /* 按钮之间的垂直间距 */
+}
+
+.view-btn {
+    padding: 4px 12px;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    backdrop-filter: blur(4px);
+    transition: 0.2s;
+    white-space: nowrap;
+    /* 防止文字换行 */
+}
+
+.view-btn:hover {
+    background: rgba(64, 128, 255, 0.8);
+    border-color: #4080ff;
+}
+
+.view-btn:active {
+    transform: scale(0.95);
 }
